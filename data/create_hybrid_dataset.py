@@ -1,0 +1,149 @@
+import re
+
+import jsonlines
+from datasets import load_dataset
+
+
+def normalize_title(title):
+    """Creates a standardized title string for deduplication."""
+    if not title:
+        return ""
+    return re.sub(r"[^a-z0-9]", "", title.lower())
+
+
+def consolidate_hf_datasets():
+    master_corpus = {}
+    master_claims = []
+    title_to_doc_id = {}
+
+    try:
+        print("Downloading SciFact from Hugging Face...")
+        # 'trust_remote_code=True' is often required for custom dataset scripts on HF
+        scifact_corpus = load_dataset(
+            "allenai/scifact", name="corpus", split="train", trust_remote_code=True
+        )
+        scifact_claims = load_dataset(
+            "allenai/scifact", name="claims", split="train", trust_remote_code=True
+        )
+    except Exception as e:
+        print(f"Error downloading SciFact: {e}")
+        return
+
+    try:
+        print("Downloading HealthVer from Hugging Face...")
+        # 'dwadden/healthver_entailment' is pre-formatted with abstracts and verdicts
+        healthver = load_dataset(
+            "dwadden/healthver_entailment", split="train", trust_remote_code=True
+        )
+    except Exception as e:
+        print(f"Error downloading HealthVer: {e}")
+        return
+
+    # --- 1. Process SciFact ---
+    print("Processing SciFact...")
+    for doc in scifact_corpus:
+        doc_id = str(doc["doc_id"])
+        title_norm = normalize_title(doc.get("title", ""))
+
+        master_corpus[doc_id] = {
+            "doc_id": doc_id,
+            "title": doc.get("title", ""),
+            "abstract": doc["abstract"],
+            "dataset_source": "scifact",
+        }
+        if title_norm:
+            title_to_doc_id[title_norm] = doc_id
+
+    for claim in scifact_claims:
+        # SciFact HF structures evidence directly in the row
+        unified_claim = {
+            "id": claim["id"],
+            "claim": claim["claim"],
+            "evidence": {
+                str(claim["evidence_doc_id"]): [
+                    {
+                        "sentences": claim["evidence_sentences"],
+                        "label": claim[
+                            "evidence_label"
+                        ],  # Usually "SUPPORT" or "CONTRADICT"
+                    }
+                ]
+            },
+            "dataset_source": "scifact",
+        }
+        master_claims.append(unified_claim)
+
+    # --- 2. Process HealthVer ---
+    print("Processing HealthVer and Deduplicating...")
+    for item in healthver:
+        # Standardize labels to match SciFact
+        raw_label = str(item["verdict"]).upper()
+        label_map = {
+            "SUPPORTS": "SUPPORT",
+            "SUPPORT": "SUPPORT",
+            "REFUTES": "CONTRADICT",
+            "CONTRADICT": "CONTRADICT",
+            "NEUTRAL": "NEUTRAL",
+            "NOINFO": "NEUTRAL",
+        }
+        stance = label_map.get(raw_label, "NEUTRAL")
+
+        raw_doc_id = str(item["abstract_id"])
+        title = item.get("title", "Unknown Title")
+        title_norm = normalize_title(title)
+
+        # Deduplicate using title hash
+        if title_norm and title_norm in title_to_doc_id:
+            final_doc_id = title_to_doc_id[title_norm]
+        else:
+            final_doc_id = "hv_" + raw_doc_id
+            if title_norm:
+                title_to_doc_id[title_norm] = final_doc_id
+
+            master_corpus[final_doc_id] = {
+                "doc_id": final_doc_id,
+                "title": title,
+                "abstract": item["abstract"],
+                "dataset_source": "healthver",
+            }
+
+        # HealthVer provides rationale sentences as raw strings.
+        # We must find their integer index within the abstract to match SciFact's format.
+        evidence_indices = []
+        for ev_sentence in item["evidence"]:
+            try:
+                idx = item["abstract"].index(ev_sentence)
+                evidence_indices.append(idx)
+            except ValueError:
+                continue  # Sentence not found exactly, skip
+
+        unified_claim = {
+            "id": item["claim_id"],
+            "claim": item["claim"],
+            "evidence": {
+                final_doc_id: [{"sentences": evidence_indices, "label": stance}]
+            },
+            "dataset_source": "healthver",
+        }
+        master_claims.append(unified_claim)
+
+    print(f"Total Unique Documents: {len(master_corpus)}")
+    print(f"Total Claims: {len(master_claims)}")
+
+    # --- 3. Export to JSONL ---
+    print(
+        "Writing to hybrid_corpus.jsonl and hybrid_claims_train.jsonl to the mounted volume..."
+    )
+    with jsonlines.open("/app/output/hybrid_corpus.jsonl", mode="w") as writer:
+        for doc in master_corpus.values():
+            writer.write(doc)
+
+    with jsonlines.open("/app/output/hybrid_claims_train.jsonl", mode="w") as writer:
+        for claim in master_claims:
+            writer.write(claim)
+
+    print("Consolidation Complete!")
+
+
+if __name__ == "__main__":
+    consolidate_hf_datasets()
