@@ -1,2 +1,0 @@
-datasets==2.18.0
-jsonlines==4.0.0

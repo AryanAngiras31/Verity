@@ -1,0 +1,32 @@
+services:
+  # 1. The Database Service
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage:z
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O - http://localhost:6333/readyz || curl -f http://localhost:6333/readyz || exit 1",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. The Offline Pipeline Service
+  data_pipeline:
+    build:
+      context: .
+    depends_on:
+      qdrant:
+        condition: service_healthy # Waits until Qdrant is fully booted before starting
+    volumes:
+      - ./output:/app/output # Mounts local folder to grab the JSONL files if you want them
+    environment:
+      # We pass the Qdrant URL as an environment variable
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6334

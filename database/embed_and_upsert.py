@@ -1,3 +1,5 @@
+import os
+import sys
 import uuid
 
 import jsonlines
@@ -5,6 +7,8 @@ from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, PointStruct, VectorParams
 from sentence_transformers import SentenceTransformer
 
+QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
+QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6334))
 MODEL_NAME = "allenai/specter2_base"
 COLLECTION_NAME = "verity_hybrid_corpus"
 
@@ -14,7 +18,7 @@ def connect_to_qdrant():
     try:
         # 1. Connect to Qdrant via gRPC
         print("Connecting to local Qdrant instance via gRPC...")
-        qdrant = QdrantClient(host="localhost", grpc_port=6334, prefer_grpc=True)
+        qdrant = QdrantClient(host=QDRANT_HOST, grpc_port=QDRANT_PORT, prefer_grpc=True)
 
         # 2. Create collection if it doesn't exist
         collection_name = COLLECTION_NAME
