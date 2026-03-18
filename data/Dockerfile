@@ -21,3 +21,9 @@ COPY create_hybrid_dataset.py .
 
 # Run the script when the container launches
 CMD ["python", "create_hybrid_dataset.py"]
+
+# To build this Dockerfile, navigate to its directory in your terminal and run:
+# docker build -t verity-ingestion .
+#
+# To run the container, use:
+# docker run --rm -v $(pwd):/app/output verity-ingestion

@@ -132,13 +132,13 @@ def consolidate_hf_datasets():
 
     # --- 3. Export to JSONL ---
     print(
-        "Writing to hybrid_corpus.jsonl and hybrid_claims_train.jsonl to the mounted volume..."
+        "Writing to hybrid_corpus.jsonl and hybrid_claims.jsonl to the mounted volume..."
     )
     with jsonlines.open("/app/output/hybrid_corpus.jsonl", mode="w") as writer:
         for doc in master_corpus.values():
             writer.write(doc)
 
-    with jsonlines.open("/app/output/hybrid_claims_train.jsonl", mode="w") as writer:
+    with jsonlines.open("/app/output/hybrid_claims.jsonl", mode="w") as writer:
         for claim in master_claims:
             writer.write(claim)
 

@@ -1,5 +1,8 @@
-# Using latest verion of qdrant
-FROM qdrant/qdrant:latest
+# Use a slim, official Python runtime as a parent image
+FROM python:3.10-slim
+
+# Set the working directory inside the container
+WORKDIR /app
 
 # Install Python and pip
 RUN apt-get update && apt-get install -y \
@@ -13,10 +16,8 @@ COPY requirements.txt .
 # Install the Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose the default ports Qdrant uses:
-# 6333 for HTTP API
-# 6334 for gRPC API
-EXPOSE 6333 6334
+# Copy the script into the container
+COPY embed_and_upsert.py .
 
 # Run the script when the container launches
 CMD ["python", "embed_and_upsert.py"]
@@ -25,4 +26,7 @@ CMD ["python", "embed_and_upsert.py"]
 # docker build -t verity-database .
 
 # To run the container after building:
-# docker run -p 6333:6333 -p 6334:6334 verity-database
+# docker run verity-database
+
+# To run the qdrant container seperately
+# docker run -p 6333:6333 -p 6334:6334 -v $(pwd)/qdrant_storage:/qdrant/storage:z qdrant/qdrant
