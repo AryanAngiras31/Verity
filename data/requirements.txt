@@ -1,5 +1,2 @@
 datasets==2.18.0
 jsonlines==4.0.0
-sentence-transformers==2.5.1
-qdrant-client==1.8.0
-torch==2.2.1
