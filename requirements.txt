@@ -2,3 +2,6 @@ sentence-transformers==5.3.0
 qdrant-client==1.17.1
 uuid==1.30
 jsonlines==4.0.0
+datasets==2.19.1
+numpy<2.0.0
+torch==2.2.1 --index-url https://download.pytorch.org/whl/cpu

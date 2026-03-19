@@ -6,26 +6,16 @@ services:
       - "6333:6333"
       - "6334:6334"
     volumes:
-      - ./qdrant_storage:/qdrant/storage:z
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "wget -q -O - http://localhost:6333/readyz || curl -f http://localhost:6333/readyz || exit 1",
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      - ./database/qdrant_storage:/qdrant/storage:z
 
   # 2. The Offline Pipeline Service
   data_pipeline:
     build:
       context: .
     depends_on:
-      qdrant:
-        condition: service_healthy # Waits until Qdrant is fully booted before starting
+      - qdrant
     volumes:
-      - ./output:/app/output # Mounts local folder to grab the JSONL files if you want them
+      - ./data:/app/output # Mounts local folder to grab the JSONL files if you want them
     environment:
       # We pass the Qdrant URL as an environment variable
       - QDRANT_HOST=qdrant
