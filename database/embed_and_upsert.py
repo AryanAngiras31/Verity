@@ -108,4 +108,4 @@ if __name__ == "__main__":
     qdrant = connect_to_qdrant()
     model = get_model()
     if qdrant and model:
-        embed_and_upsert(qdrant, model, "hybrid_corpus.jsonl", 500)
+        embed_and_upsert(qdrant, model, "/app/output/hybrid_corpus.jsonl", 500)

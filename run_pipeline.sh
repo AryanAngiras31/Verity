@@ -3,7 +3,7 @@ set -e # Tell the script to stop immediately if an error occurs
 
 # Define the expected output files
 CORPUS_FILE="/app/output/hybrid_corpus.jsonl"
-CLAIMS_FILE="/app/output/hybrid_claims_train.jsonl"
+CLAIMS_FILE="/app/output/hybrid_claims.jsonl"
 
 echo "=== Phase 1: Downloading and Consolidating Datasets ==="
 

@@ -1,0 +1,61 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+.env
+.pytest_cache/
+.ipynb_checkpoints/
+
+# --- Rust (Backend API) ---
+/target/
+**/*.rs.bk
+# We usually keep Cargo.lock for binary applications like Verity
+
+# --- Node.js / React (Frontend) ---
+node_modules/
+/build
+/dist
+.eslintcache
+.stylelintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.next/
+
+# --- Project Specific Data & Database ---
+# We ignore the actual data files and DB storage to keep the repo small
+/data/*.jsonl
+/data/*.json
+/database/qdrant_storage/
+/qdrant_storage/
+**/qdrant_storage/
+
+# --- ML Models (ONNX) ---
+# These are often very large and should be downloaded/cached, not committed
+*.onnx
+*.onnx_data
+/models/
+
+# --- Docker ---
+.docker/
+# If you use docker-compose overrides
+docker-compose.override.yml
+
+# --- System & IDE ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Logs ---
+logs/
+*.log
+
+# --- Specific Dataset folders (if downloaded locally) ---
+/data/scifact/
+/data/healthver/
