@@ -92,6 +92,10 @@ def embed_and_upsert(qdrant, model, filename, batchsize=500):
                     points=points,
                 )
                 total_processed += len(points)
+                print(
+                    f"Progress: Upserted {total_processed} documents so far...",
+                    flush=True,
+                )
                 points = []
 
     # Upsert any remaining points
