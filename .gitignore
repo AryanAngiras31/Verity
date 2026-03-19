@@ -10,7 +10,7 @@ ENV/
 .ipynb_checkpoints/
 
 # --- Rust (Backend API) ---
-/target/
+target/
 **/*.rs.bk
 # We usually keep Cargo.lock for binary applications like Verity
 
