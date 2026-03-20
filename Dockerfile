@@ -17,6 +17,7 @@ RUN mkdir -p /app/output
 # Copy BOTH Python scripts into the container
 COPY data/create_hybrid_dataset.py .
 COPY database/embed_and_upsert.py .
+COPY models/export_models.py .
 
 # Copy a shell script that will run them in order
 COPY run_pipeline.sh .
