@@ -1,7 +1,13 @@
+import os
 import re
+import sys
 
 import jsonlines
 from datasets import load_dataset
+
+# Define the expected output files
+CORPUS_FILE = "/app/output/hybrid_corpus.jsonl"
+CLAIMS_FILE = "/app/output/hybrid_claims.jsonl"
 
 
 def normalize_title(title):
@@ -12,6 +18,11 @@ def normalize_title(title):
 
 
 def consolidate_hf_datasets():
+    # Check if both files already exist
+    if os.path.exists(CORPUS_FILE) and os.path.exists(CLAIMS_FILE):
+        print("Hybrid dataset files already exist in the output folder. Exiting...")
+        sys.exit(0)
+
     master_corpus = {}
     master_claims = []
     title_to_doc_id = {}

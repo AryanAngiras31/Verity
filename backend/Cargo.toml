@@ -21,6 +21,12 @@ tonic = "0.10" # Required underlying gRPC library for Qdrant
 # ONNX Runtime (for SPECTER 2 and DeBERTa)
 ort = "2.0.0-rc.9"
 
+# Hugging Face tokenizers (to convert strings into token IDs)
+tokenizers = "0.15.2"
+
+# Multi-dimensional arrays (to feed data into the ONNX models)
+ndarray = "0.15.6"
+
 # Error handling and environment variables
 anyhow = "1.0"
 dotenvy = "0.15"

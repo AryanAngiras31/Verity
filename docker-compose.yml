@@ -8,10 +8,10 @@ services:
       - "6333:6333"
       - "6334:6334"
     volumes:
-      - ./qdrant/qdrant_storage:/qdrant/storage:z
+      - ./database/qdrant_storage:/qdrant/storage:z
 
   # 2. The Offline Pipeline Service
-  data_pipeline:
+  ingestion-pipeline:
     build:
       context: .
     depends_on:
