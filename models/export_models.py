@@ -9,7 +9,7 @@ from transformers import AutoTokenizer
 
 def export_to_onnx():
     # Define the output directory
-    output_dir = Path("./models")
+    output_dir = Path("/app/models/")
     output_dir.mkdir(exist_ok=True)
 
     print("\n--- 1. Exporting SPECTER 2 (Bi-Encoder) ---")

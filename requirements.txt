@@ -2,7 +2,9 @@ qdrant-client==1.17.1
 jsonlines==4.0.0
 datasets==2.19.1
 numpy<2.0.0
-torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
-sentence-transformers<4.0.0
-transformers==4.39.3
-optimum[onnxruntime]==1.19.0
+
+transformers>=4.48.0
+sentencepiece
+sentence-transformers
+
+optimum[onnxruntime]>=1.22.0

@@ -17,7 +17,8 @@ services:
     depends_on:
       - qdrant
     volumes:
-      - ./data:/app/output # Mounts local folder to grab the JSONL files if you want them
+      - ./data:/app/output # Mapped to /app/output/ (for consolidated datasets)
+      - ./models:/app/models # Add this line: Mapped to /app/models/ (for ONNX models)
     environment:
       # We pass the Qdrant URL as an environment variable
       - QDRANT_HOST=qdrant

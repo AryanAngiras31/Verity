@@ -37,6 +37,8 @@ yarn-error.log*
 # These are often very large and should be downloaded/cached, not committed
 *.onnx
 *.onnx_data
+models/
+!models/export_models.py
 
 # --- Docker ---
 .docker/
