@@ -1,14 +1,14 @@
 mod types;
 
 use actix_web::{post, web, App, HttpServer, Responder, HttpResponse};
-use qdrant_client::QdrantClient;
+use qdrant_client::Qdrant;
 use qdrant_client::qdrant::Value;
 use types::{VerifyRequest, VerifyResponse};
 use std::env;
 
 // This struct holds our shared application state
 struct AppState {
-    qdrant_client: QdrantClient,
+    qdrant_client: Qdrant,
 }
 
 #[post("/api/verify")]
@@ -36,7 +36,7 @@ async fn main() -> std::io::Result<()> {
     let qdrant_url = env::var("QDRANT_URL").unwrap_or_else(|_| "http://qdrant:6334".to_string());
 
     println!("Connecting to Qdrant at {}...", qdrant_url);
-    let client = QdrantClient::from_url(&qdrant_url)
+    let client = Qdrant::from_url(&qdrant_url)
         .build()
         .expect("Failed to build Qdrant Client");
 

@@ -30,7 +30,7 @@ def connect_to_qdrant():
             print(f"Collection '{collection_name}' created.")
             return qdrant, False
         else:
-            print(f"Collection '{collection_name}' already exists.")
+            # Return None as qdrant client and True since collection exists
             return None, True
 
     except Exception as e:
