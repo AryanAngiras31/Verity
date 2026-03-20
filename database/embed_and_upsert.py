@@ -28,13 +28,14 @@ def connect_to_qdrant():
                 vectors_config=VectorParams(size=768, distance=Distance.COSINE),
             )
             print(f"Collection '{collection_name}' created.")
+            return qdrant, False
         else:
             print(f"Collection '{collection_name}' already exists.")
+            return None, True
 
-        return qdrant
     except Exception as e:
         print(f"Failed to connect to Qdrant: {e}")
-        return None
+        return None, False
 
 
 # Loads the SPECTER 2 model.
@@ -109,7 +110,12 @@ def embed_and_upsert(qdrant, model, filename, batchsize=500):
 
 
 if __name__ == "__main__":
-    qdrant = connect_to_qdrant()
     model = get_model()
-    if qdrant and model:
+    qdrant, is_populated = connect_to_qdrant()
+    if is_populated:
+        print(f"Collection '{COLLECTION_NAME}' already exists. Exiting...")
+        sys.exit(0)
+    elif qdrant and model:
         embed_and_upsert(qdrant, model, "/app/output/hybrid_corpus.jsonl", 500)
+    else:
+        sys.exit(1)

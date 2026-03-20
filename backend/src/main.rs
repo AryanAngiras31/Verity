@@ -1,7 +1,7 @@
 mod types;
 
 use actix_web::{post, web, App, HttpServer, Responder, HttpResponse};
-use qdrant_client::client::QdrantClient;
+use qdrant_client::QdrantClient;
 use qdrant_client::qdrant::Value;
 use types::{VerifyRequest, VerifyResponse};
 use std::env;

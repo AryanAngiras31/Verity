@@ -1,19 +1,21 @@
+version: "3.8"
+
 services:
-  # 1. The Database Service
-  database:
+  # 1. The qdrant Service
+  qdrant:
     image: qdrant/qdrant:latest
     ports:
       - "6333:6333"
       - "6334:6334"
     volumes:
-      - ./database/qdrant_storage:/qdrant/storage:z
+      - ./qdrant/qdrant_storage:/qdrant/storage:z
 
   # 2. The Offline Pipeline Service
   data_pipeline:
     build:
       context: .
     depends_on:
-      - database
+      - qdrant
     volumes:
       - ./data:/app/output # Mounts local folder to grab the JSONL files if you want them
     environment:
@@ -25,14 +27,13 @@ services:
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
-    working_dir: /app
     volumes:
       - ./backend:/app
+      - backend_target:/app/target
     ports:
       - "8080:8080"
     depends_on:
-      database:
+      qdrant:
         condition: service_started
     environment:
       - QDRANT_URL=http://qdrant:6334
@@ -40,4 +41,8 @@ services:
     # -c: Clear the screen before each run
     # -w src: Only watch for changes in the 'src' directory
     # -x run: Execute 'cargo run' when a change is detected
-    command: cargo watch -c -w src -x run
+    command: cargo watch -w src -x run
+
+# Declare the named volume used by the backend
+volumes:
+  backend_target:
