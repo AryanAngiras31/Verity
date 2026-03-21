@@ -1,24 +1,23 @@
 mod types;
 use types::{VerifyRequest, VerifyResponse};
 
+use std::sync::Mutex;
 use std::env;
 
 use actix_web::{post, web, App, HttpServer, Responder, HttpResponse};
 
 use qdrant_client::Qdrant;
-use qdrant_client::qdrant::Value;
 
 use ort::session::Session;
 use ort::value::Tensor;
 use tokenizers::Tokenizer;
-use ndarray::Array2;
 
 // This struct holds our shared application state
 struct AppState {
     qdrant_client: Qdrant,
-    specter_model: Session,
+    specter_model: Mutex<Session>,
     specter_tokenizer: Tokenizer,
-    deberta_model: Session,
+    deberta_model: Mutex<Session>,
     deberta_tokenizer: Tokenizer,
 }
 
@@ -39,37 +38,38 @@ async fn verify_claim(
     let attention_mask: Vec<i64> = encoding.get_attention_mask().iter().map(|&x| x as i64).collect();
 
     // This is the number of sequences
-    let batch_size = 1;
+    let batch_size: usize = 1;
     // This is the number of tokens in the sequence
-    let seq_len = input_ids.len();
+    let seq_len: usize = input_ids.len();
 
-    // Convert the raw vectors into 2D ndarray tensors
-    let input_ids_array = ndarray::Array2::from_shape_vec((batch_size, seq_len), input_ids).unwrap();
-    let attention_mask_array = ndarray::Array2::from_shape_vec((batch_size, seq_len), attention_mask).unwrap();
+    // Pass a standard Rust Tuple (Shape, Data) directly to ONNX.
+    let shape = vec![batch_size, seq_len];
 
     // Convert ndarray tensors to ONNX tensors
-    let input_ids_tensor = Tensor::from_array(input_ids_array).unwrap();
-    let attention_mask_tensor = Tensor::from_array(attention_mask_array).unwrap();
+    let input_ids_tensor = Tensor::from_array((shape.clone(), input_ids)).unwrap();
+    let attention_mask_tensor = Tensor::from_array((shape, attention_mask)).unwrap();
+
+    // Get the Mutex lock to get safe, mutable access to the model
+    let mut specter = data.specter_model.lock().expect("Could not get Mutex lock for SPECTER 2 model");
 
     // Run the SPECTER 2 model
-    let outputs = data.specter_model.run(ort::inputs![
+    let outputs = specter.run(ort::inputs![
         "input_ids" => input_ids_tensor,
         "attention_mask" => attention_mask_tensor,
     ]).expect("Failed to run SPECTER 2 model");
 
-    println!("{:?}", outputs);
-
     // Extract the embedding
     // SPECTER uses the [CLS] token (the very first token at index 0) as the embedding for the whole sentence.
-    let last_hidden_state = outputs["last_hidden_state"]    // The output is a tensor of shape [batch_size, sequence_length, hidden_dimension]
+    let (_shape, tensor_data) = outputs["last_hidden_state"]    // The output is a tensor of shape [batch_size, sequence_length, hidden_dimension]
         .try_extract_tensor::<f32>()
         .expect("Failed to extract float tensor from ONNX output");
 
-    // Slice out the first token's 768-dimensional vector
-    let embedding: Vec<f32> = last_hidden_state
-        .view()
-        .slice(ndarray::s![0, 0, ..]) // [Batch 0, Token 0, All 768 dimensions]
-        .to_vec();
+    // Drop the mutex lock as soon as we're done with the embedding
+    drop(data.specter_model.lock());
+
+    // Because the tensor is flattened, the first token's 768 dimensions
+    // are simply the first 768 numbers in the array!
+    let embedding: Vec<f32> = tensor_data[0..768].to_vec();
 
     println!("Successfully generated embedding of size: {}", embedding.len());
 
@@ -99,9 +99,9 @@ async fn main() -> std::io::Result<()> {
     // 4. Wrap client in Actix web::Data for thread-safe sharing
     let app_state = web::Data::new(AppState {
         qdrant_client: client,
-        specter_model: Session::new("models/specter2/model.onnx").expect("Failed to load Specter model"),
+        specter_model: Mutex::new(Session::builder().unwrap().commit_from_file("models/specter2/model.onnx").expect("Failed to load Specter model")),
         specter_tokenizer: Tokenizer::from_file("models/specter2/tokenizer.json").expect("Failed to load Specter tokenizer"),
-        deberta_model: Session::new("models/deberta/model.onnx").expect("Failed to load DeBERTa model"),
+        deberta_model: Mutex::new(Session::builder().unwrap().commit_from_file("models/deberta/model.onnx").expect("Failed to load DeBERTa model")),
         deberta_tokenizer: Tokenizer::from_file("models/deberta/tokenizer.json").expect("Failed to load DeBERTa tokenizer"),
     });
 

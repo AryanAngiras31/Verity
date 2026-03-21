@@ -30,6 +30,7 @@ services:
       context: ./backend
     volumes:
       - ./backend:/app
+      - ./models:/app/models
       - backend_target:/app/target
     ports:
       - "8080:8080"
