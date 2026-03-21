@@ -1,12 +1,17 @@
 mod types;
+use types::{VerifyRequest, VerifyResponse};
+
+use std::env;
 
 use actix_web::{post, web, App, HttpServer, Responder, HttpResponse};
+
 use qdrant_client::Qdrant;
 use qdrant_client::qdrant::Value;
-use types::{VerifyRequest, VerifyResponse};
-use std::env;
-use ort::{GraphOptimizationLevel, Session};
+
+use ort::session::Session;
+use ort::value::Tensor;
 use tokenizers::Tokenizer;
+use ndarray::Array2;
 
 // This struct holds our shared application state
 struct AppState {
@@ -26,6 +31,48 @@ async fn verify_claim(
 
     println!("Received claim: {}", claim);
 
+    // Embed the claim using the Specter 2
+    let encoding = data.specter_tokenizer.encode(claim.as_str(), true).expect("Failed to encode claim using SPECTER 2");
+
+    // ONNX expects 64 bit integers for input ids and masks
+    let input_ids: Vec<i64> = encoding.get_ids().iter().map(|&x| x as i64).collect();
+    let attention_mask: Vec<i64> = encoding.get_attention_mask().iter().map(|&x| x as i64).collect();
+
+    // This is the number of sequences
+    let batch_size = 1;
+    // This is the number of tokens in the sequence
+    let seq_len = input_ids.len();
+
+    // Convert the raw vectors into 2D ndarray tensors
+    let input_ids_array = ndarray::Array2::from_shape_vec((batch_size, seq_len), input_ids).unwrap();
+    let attention_mask_array = ndarray::Array2::from_shape_vec((batch_size, seq_len), attention_mask).unwrap();
+
+    // Convert ndarray tensors to ONNX tensors
+    let input_ids_tensor = Tensor::from_array(input_ids_array).unwrap();
+    let attention_mask_tensor = Tensor::from_array(attention_mask_array).unwrap();
+
+    // Run the SPECTER 2 model
+    let outputs = data.specter_model.run(ort::inputs![
+        "input_ids" => input_ids_tensor,
+        "attention_mask" => attention_mask_tensor,
+    ]).expect("Failed to run SPECTER 2 model");
+
+    println!("{:?}", outputs);
+
+    // Extract the embedding
+    // SPECTER uses the [CLS] token (the very first token at index 0) as the embedding for the whole sentence.
+    let last_hidden_state = outputs["last_hidden_state"]    // The output is a tensor of shape [batch_size, sequence_length, hidden_dimension]
+        .try_extract_tensor::<f32>()
+        .expect("Failed to extract float tensor from ONNX output");
+
+    // Slice out the first token's 768-dimensional vector
+    let embedding: Vec<f32> = last_hidden_state
+        .view()
+        .slice(ndarray::s![0, 0, ..]) // [Batch 0, Token 0, All 768 dimensions]
+        .to_vec();
+
+    println!("Successfully generated embedding of size: {}", embedding.len());
+
     // Dummy response to ensure the routing works before adding ML logic
     let dummy_response = VerifyResponse {
         final_verdict: "NEUTRAL".to_string(),
@@ -39,7 +86,7 @@ async fn verify_claim(
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     // 1. Initialize ONNX runtime engine
-    ort::init().with_name("verity_inference_engine").commit().expect("Failed to initialize ONNX runtime engine");
+    ort::init().with_name("verity_inference_engine").commit();
 
     // 2. Initialize Qdrant Client (Connecting over the Docker network)
     let qdrant_url = env::var("QDRANT_URL").unwrap_or_else(|_| "http://qdrant:6334".to_string());
