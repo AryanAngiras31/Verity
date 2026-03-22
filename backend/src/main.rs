@@ -54,28 +54,27 @@ async fn verify_claim(
     let attention_mask_tensor = Tensor::from_array((shape.clone(), attention_mask)).unwrap();
     let token_type_ids_tensor = Tensor::from_array((shape.clone(), token_type_ids)).unwrap();
 
-    // Get the Mutex lock to get safe, mutable access to the model
-    let mut specter = data.specter_model.lock().expect("Could not get Mutex lock for SPECTER 2 model");
+    // Use a scoping block to automatically drop the pointer from output to specter and the Mutex lock after the embedding is extracted
+    let embedding: Vec<f32> = {
+        // Get the Mutex lock to get safe, mutable access to the model
+        let mut specter = data.specter_model.lock().expect("Could not get Mutex lock for SPECTER 2 model");
 
-    // Run the SPECTER 2 model
-    let outputs = specter.run(ort::inputs![
-        "input_ids" => input_ids_tensor,
-        "attention_mask" => attention_mask_tensor,
-        "token_type_ids" => token_type_ids_tensor,
-    ]).expect("Failed to run SPECTER 2 model");
+        // Run the SPECTER 2 model
+        let outputs = specter.run(ort::inputs![
+            "input_ids" => input_ids_tensor,
+            "attention_mask" => attention_mask_tensor,
+            "token_type_ids" => token_type_ids_tensor,
+        ]).expect("Failed to run SPECTER 2 model");
 
-    // Extract the embedding
-    // SPECTER uses the [CLS] token (the very first token at index 0) as the embedding for the whole sentence.
-    let (_shape, tensor_data) = outputs["last_hidden_state"]    // The output is a tensor of shape [batch_size, sequence_length, hidden_dimension]
-        .try_extract_tensor::<f32>()
-        .expect("Failed to extract float tensor from ONNX output");
+        // Extract the embedding
+        // SPECTER uses the [CLS] token (the very first token at index 0) as the embedding for the whole sentence.
+        let (_shape, tensor_data) = outputs["last_hidden_state"]    // The output is a tensor of shape [batch_size, sequence_length, hidden_dimension]
+            .try_extract_tensor::<f32>()
+            .expect("Failed to extract float tensor from ONNX output");
 
-    // Drop the mutex lock as soon as we're done with the embedding
-    drop(data.specter_model.lock());
-
-    // Because the tensor is flattened, the first token's 768 dimensions
-    // are simply the first 768 numbers in the array!
-    let embedding: Vec<f32> = tensor_data[0..768].to_vec();
+        // Because the tensor is flattened, the first token's 768 dimensions are simply the first 768 numbers in the array. Return them.
+        tensor_data[0..768].to_vec()
+    };
 
     println!("Successfully generated embedding of size: {}", embedding.len());
 
