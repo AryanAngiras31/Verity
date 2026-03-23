@@ -112,13 +112,19 @@ async fn verify_claim(
                 .unwrap_or("Unknown")
         };
 
-        let abstract_text = get_string("abstract");
         let title = get_string("title");
         let source = get_string("dataset_source");
 
+        // Extract the abstract
+        let raw_abstract = get_string("abstract");
+
+        // FIX: Truncate the abstract to ~1500 characters (approx 300 tokens).
+        // This guarantees we never overflow DeBERTa's 512 token limit
+        let abstract_text = &raw_abstract[..raw_abstract.len().min(1500)];
+
         // Tokenize the claim and abstract text. The DeBERTa tokenizer automatically inserts the [SEP] token between them.
         let encoding = data.deberta_tokenizer
-            .encode((claim, abstract_text), true)
+            .encode((abstract_text, claim), true)
             .expect("Failed to tokenize claim and abstract text");
 
         // DeBERTa does not require token_type_ids, so we do not include it in the inputs.
