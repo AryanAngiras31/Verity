@@ -11,16 +11,15 @@ pub struct VerifyRequest {
 pub struct VerifyResponse {
     pub final_verdict: String,
     pub aggregate_confidence: f32,
-    pub evidence: Vec<EvidenceItem>,
+    pub evidence: Vec<Evidence>,
 }
 
 // The individual evidence cards for the React frontend
 #[derive(Serialize)]
-pub struct EvidenceItem {
-    pub doc_id: String,
+pub struct Evidence {
     pub title: String,
-    pub abstract_text: String,
+    pub source: String,
+    pub snippet: String,
     pub stance: String,
     pub confidence: f32,
-    pub highlight_indices: Vec<[usize; 2]>,
 }

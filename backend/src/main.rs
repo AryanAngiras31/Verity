@@ -1,5 +1,5 @@
 mod types;
-use types::{VerifyRequest, VerifyResponse};
+use types::{VerifyRequest, VerifyResponse, Evidence};
 
 use std::sync::Mutex;
 use std::env;
@@ -29,15 +29,16 @@ async fn verify_claim(
     req_body: web::Json<VerifyRequest>,
     data: web::Data<AppState>,
 ) -> impl Responder {
-    let claim = &req_body.claim;
+    let claim: &str = &req_body.claim;
 
     println!("\nReceived claim: {}", claim);
 
     // Embed the claim using the Specter 2
-    let encoding = data.specter_tokenizer.encode(claim.as_str(), true).expect("Failed to encode claim using SPECTER 2");
+    let encoding = data.specter_tokenizer.encode(claim, true).expect("Failed to encode claim using SPECTER 2");
 
     // SPECTER 2 is build on a BERT style architecture and requires these three inputs
     // ONNX expects 64 bit integers for input ids and masks
+
     // Ids of the tokens in the sequence
     let input_ids: Vec<i64> = encoding.get_ids().iter().map(|&x| x as i64).collect();
     // Tells the model which tokens are padding and which are actual tokens. (1 for actual tokens, 0 for padding)
@@ -45,17 +46,9 @@ async fn verify_claim(
     // Tells the model which tokens belong to which sequence. (0 for the first sequence, 1 for the second, etc.)
     let token_type_ids: Vec<i64> = encoding.get_type_ids().iter().map(|&x| x as i64).collect();
 
-    // This is the number of sequences
-    let batch_size: usize = 1;
-    // This is the number of tokens in the sequence
-    let seq_len: usize = input_ids.len();
-    // Pass a standard Rust Tuple (Shape, Data) directly to ONNX.
-    let shape = vec![batch_size, seq_len];
-
-    // Convert ndarray tensors to ONNX tensors
-    let input_ids_tensor = Tensor::from_array((shape.clone(), input_ids)).unwrap();
-    let attention_mask_tensor = Tensor::from_array((shape.clone(), attention_mask)).unwrap();
-    let token_type_ids_tensor = Tensor::from_array((shape.clone(), token_type_ids)).unwrap();
+    let batch_size: usize = 1;  // This is the number of sequences
+    let seq_len: usize = input_ids.len();   // This is the number of tokens in the sequence
+    let shape = vec![batch_size, seq_len];  // Pass a standard Rust Tuple (Shape, Data) directly to ONNX.
 
     // Use a scoping block to automatically drop the pointer from output to specter and the Mutex lock after the embedding is extracted
     let embedding: Vec<f32> = {
@@ -64,9 +57,9 @@ async fn verify_claim(
 
         // Run the SPECTER 2 model
         let outputs = specter.run(ort::inputs![
-            "input_ids" => input_ids_tensor,
-            "attention_mask" => attention_mask_tensor,
-            "token_type_ids" => token_type_ids_tensor,
+            "input_ids" => Tensor::from_array((shape.clone(), input_ids)).unwrap(),
+            "attention_mask" => Tensor::from_array((shape.clone(), attention_mask)).unwrap(),
+            "token_type_ids" => Tensor::from_array((shape.clone(), token_type_ids)).unwrap(),
         ]).expect("Failed to run SPECTER 2 model");
 
         // Extract the embedding
@@ -99,14 +92,16 @@ async fn verify_claim(
         }
     };
 
-    // Displaying Qdrant response
-    println!("\n--- Qdrant Search Results (Top {}) ---", response.result.len());
-    // Extract the abstaracts from the JSON response
-    let mut received_abstracts = Vec::new();
-    // Store confidence scores for each result
-    let mut received_confidences = Vec::new();
+    // DeBERTa Cross Encoder Inference
+    let mut evidence_list: Vec<types::Evidence> = Vec::new();
+    let mut total_support_score = 0.0;
+    let mut total_refute_score = 0.0;
+    let mut total_neutral_score = 0.0;
 
-    for (i, hit) in response.result.iter().enumerate() {
+    // Get the Mutex lock for the DeBERTa model
+    let mut deberta = data.deberta_model.lock().expect("Could not get Mutex lock for DeBERTa model");
+
+    for hit in response.result.iter() {
         let payload = &hit.payload;
 
         // Helper to extract strings from the Qdrant Value type safely
@@ -117,35 +112,97 @@ async fn verify_claim(
                 .unwrap_or("Unknown")
         };
 
-        // Extract title, doc_id, source, and score from the hit
-        let title = get_string("title");
-        let doc_id = get_string("doc_id");
-        let source = get_string("dataset_source");
-        let score = hit.score;
-
-        received_confidences.push(score);
-
-        println!("[{}] Score: {:.4} | ID: {} [{}]", i + 1, score, doc_id, source);
-        println!("    Title: {}", title);
         let abstract_text = get_string("abstract");
-        received_abstracts.push(abstract_text);
-        println!("    Snippet: {}...", &abstract_text[..200.min(abstract_text.len())]);
-        println!("--------------------------------------------------");
+        let title = get_string("title");
+        let source = get_string("dataset_source");
+
+        // Tokenize the claim and abstract text. The DeBERTa tokenizer automatically inserts the [SEP] token between them.
+        let encoding = data.deberta_tokenizer
+            .encode((claim, abstract_text), true)
+            .expect("Failed to tokenize claim and abstract text");
+
+        let input_ids: Vec<i64> = encoding.get_ids().iter().map(|&x| x as i64).collect();
+        let attention_mask: Vec<i64> = encoding.get_attention_mask().iter().map(|&x| x as i64).collect();
+        let token_type_ids: Vec<i64> = encoding.get_type_ids().iter().map(|&x| x as i64).collect();
+
+        let shape = vec![1, input_ids.len() as i64];
+
+        let outputs = deberta.run(ort::inputs![
+            "input_ids" => Tensor::from_array((shape.clone(), input_ids)).unwrap(),
+            "attention_mask" => Tensor::from_array((shape.clone(), attention_mask)).unwrap(),
+            "token_type_ids" => Tensor::from_array((shape.clone(), token_type_ids)).unwrap(),
+        ]).expect("DeBERTa inference failed");
+
+        // DeBERTa's SequenceClassification exports the final layer as "logits"
+        let (_shape, logits_data) = outputs["logits"].try_extract_tensor::<f32>().unwrap();
+        let logits = &logits_data[0..3];
+
+        // Calculate SoftMax for logits. Maps logits to a range of 0 to 1 making sure they add up to 1.
+        let max_logit: f32 = logits[0].max(logits[1].max(logits[2]));
+        let exp_logits: Vec<f32> = logits.iter().map(|&x| (x-max_logit).exp()).collect();
+        let sum_logits: f32 = exp_logits.iter().sum();
+        let softmax_probs: Vec<f32> = exp_logits.iter().map(|&x| x / sum_logits).collect();
+
+        // HuggingFace DeBERTa-v3-small NLI Mapping:
+        // 0 -> Contradiction (Refute), 1 -> Entailment (Support), 2 -> Neutral
+        let refute_prob = softmax_probs[0];
+        let support_prob = softmax_probs[1];
+        let neutral_prob = softmax_probs[2];
+
+        // Calculate evidence verdict and confidence
+        total_refute_score += refute_prob;
+        total_support_score += support_prob;
+        total_neutral_score += neutral_prob;
+
+        let mut stance = "NEUTRAL".to_string();
+        let mut confidence = neutral_prob;
+
+        if support_prob > refute_prob && support_prob > neutral_prob {
+            stance = "SUPPORT".to_string();
+            confidence = support_prob;
+        } else if refute_prob > support_prob && refute_prob > neutral_prob {
+            stance = "REFUTE".to_string();
+            confidence = refute_prob;
+        }
+
+        evidence_list.push(types::Evidence {
+            title: title.to_string(),
+            source: source.to_string(),
+            snippet: format!("{}...", &abstract_text[..200.min(abstract_text.len())]),
+            stance,
+            confidence,
+        });
     }
 
-    if received_abstracts.is_empty() {
-        println!("Warning: Qdrant returned results, but no 'abstract' field was found in the payload.");
-        return HttpResponse::InternalServerError().body("Qdrant returned results, but no 'abstract' field was found in the payload.");
+    drop(deberta);
+
+    // Calculate the final verdict and aggregate confidence
+    let num_docs = evidence_list.len() as f32;
+    let avg_support = total_support_score / num_docs;
+    let avg_refute = total_refute_score / num_docs;
+    let avg_neutral = total_neutral_score / num_docs;
+
+    let mut final_verdict = "NEUTRAL".to_string();
+    let mut aggregate_confidence = avg_neutral;
+
+    // The mathematically sound verdict: Whichever average probability is strictly the highest wins.
+    if avg_support > avg_refute && avg_support > avg_neutral {
+        final_verdict = "TRUE".to_string();
+        aggregate_confidence = avg_support;
+    } else if avg_refute > avg_support && avg_refute > avg_neutral {
+        final_verdict = "FALSE".to_string();
+        aggregate_confidence = avg_refute;
     }
 
-    // Dummy response to ensure the routing works before adding ML logic
-    let dummy_response = VerifyResponse {
-        final_verdict: "NEUTRAL".to_string(),
-        aggregate_confidence: 0.0,
-        evidence: vec![],
+    let response = VerifyResponse {
+        final_verdict,
+        aggregate_confidence,
+        evidence: evidence_list,
     };
 
-    HttpResponse::Ok().json(dummy_response)
+    println!("Verdict: {} (Confidence: {:.2}%)", response.final_verdict, response.aggregate_confidence * 100.0);
+
+    HttpResponse::Ok().json(response)
 }
 
 #[actix_web::main]
