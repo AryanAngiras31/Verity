@@ -7,6 +7,7 @@ use std::env;
 use actix_web::{post, web, App, HttpServer, Responder, HttpResponse};
 
 use qdrant_client::Qdrant;
+use qdrant_client::qdrant::QueryPointsBuilder;
 
 use ort::session::Session;
 use ort::value::Tensor;
@@ -20,6 +21,8 @@ struct AppState {
     deberta_model: Mutex<Session>,
     deberta_tokenizer: Tokenizer,
 }
+
+const COLLECTION_NAME: &str = "verity_hybrid_corpus";
 
 #[post("/api/verify")]
 async fn verify_claim(
@@ -78,6 +81,57 @@ async fn verify_claim(
 
     println!("Successfully generated embedding of size: {}", embedding.len());
 
+    // Query Qdrant for top 5 matches
+    println!("Querying Qdrant for top 5 matches...");
+    let query_request = QueryPointsBuilder::new(COLLECTION_NAME)
+        .query(embedding)
+        .limit(5)
+        .with_payload(true);
+
+    let response_result = data.qdrant_client
+        .query(query_request).await;
+
+    let response = match response_result {
+        Ok(response) => {
+            response
+        }
+        Err(e) => {
+            println!("Error querying Qdrant: {:?}", e);
+            return HttpResponse::InternalServerError().body("Error querying Qdrant");
+        }
+    };
+
+    // Displaying Qdrant response
+    println!("--- Qdrant Search Results (Top {}) ---", response.result.len());
+
+    for (i, hit) in response.result.iter().enumerate() {
+        let payload = &hit.payload;
+
+        // Helper to extract strings from the Qdrant Value type safely
+        let get_string = |key: &str| {
+            payload.get(key)
+                .and_then(|v| v.as_str())
+                .map(|s| s.as_str())
+                .unwrap_or("Unknown")
+        };
+
+        let title = get_string("title");
+        let doc_id = get_string("doc_id");
+        let source = get_string("dataset_source");
+        let score = hit.score;
+
+        println!("[{}] Score: {:.4} | ID: {} [{}]", i + 1, score, doc_id, source);
+        println!("    Title: {}", title);
+        let abstract_text = get_string("abstract");
+        println!("    Snippet: {}...", &abstract_text[..200.min(abstract_text.len())]);
+        println!("--------------------------------------------------");
+    }
+    
+    // Extract the abstaracts from the JSON response
+    let mut received_abstracts = Vec::new();
+    
+
+
     // Dummy response to ensure the routing works before adding ML logic
     let dummy_response = VerifyResponse {
         final_verdict: "NEUTRAL".to_string(),
@@ -120,7 +174,7 @@ async fn main() -> std::io::Result<()> {
         deberta_tokenizer: Tokenizer::from_file("models/deberta/tokenizer.json").expect("Failed to load DeBERTa tokenizer"),
     });
 
-    println!("Starting Verity Rust API on 0.0.0.0:8080...");
+    println!("Started Verity Rust API on 0.0.0.0:8080...");
 
     // 5. Start the HTTP Server
     HttpServer::new(move || {
