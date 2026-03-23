@@ -121,16 +121,15 @@ async fn verify_claim(
             .encode((claim, abstract_text), true)
             .expect("Failed to tokenize claim and abstract text");
 
+        // DeBERTa does not require token_type_ids, so we do not include it in the inputs.
         let input_ids: Vec<i64> = encoding.get_ids().iter().map(|&x| x as i64).collect();
         let attention_mask: Vec<i64> = encoding.get_attention_mask().iter().map(|&x| x as i64).collect();
-        let token_type_ids: Vec<i64> = encoding.get_type_ids().iter().map(|&x| x as i64).collect();
 
         let shape = vec![1, input_ids.len() as i64];
 
         let outputs = deberta.run(ort::inputs![
             "input_ids" => Tensor::from_array((shape.clone(), input_ids)).unwrap(),
             "attention_mask" => Tensor::from_array((shape.clone(), attention_mask)).unwrap(),
-            "token_type_ids" => Tensor::from_array((shape.clone(), token_type_ids)).unwrap(),
         ]).expect("DeBERTa inference failed");
 
         // DeBERTa's SequenceClassification exports the final layer as "logits"
