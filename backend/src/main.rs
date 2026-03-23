@@ -31,7 +31,7 @@ async fn verify_claim(
 ) -> impl Responder {
     let claim = &req_body.claim;
 
-    println!("Received claim: {}", claim);
+    println!("\nReceived claim: {}", claim);
 
     // Embed the claim using the Specter 2
     let encoding = data.specter_tokenizer.encode(claim.as_str(), true).expect("Failed to encode claim using SPECTER 2");
@@ -79,8 +79,6 @@ async fn verify_claim(
         tensor_data[0..768].to_vec()
     };
 
-    println!("Successfully generated embedding of size: {}", embedding.len());
-
     // Query Qdrant for top 5 matches
     println!("Querying Qdrant for top 5 matches...");
     let query_request = QueryPointsBuilder::new(COLLECTION_NAME)
@@ -102,7 +100,11 @@ async fn verify_claim(
     };
 
     // Displaying Qdrant response
-    println!("--- Qdrant Search Results (Top {}) ---", response.result.len());
+    println!("\n--- Qdrant Search Results (Top {}) ---", response.result.len());
+    // Extract the abstaracts from the JSON response
+    let mut received_abstracts = Vec::new();
+    // Store confidence scores for each result
+    let mut received_confidences = Vec::new();
 
     for (i, hit) in response.result.iter().enumerate() {
         let payload = &hit.payload;
@@ -115,22 +117,26 @@ async fn verify_claim(
                 .unwrap_or("Unknown")
         };
 
+        // Extract title, doc_id, source, and score from the hit
         let title = get_string("title");
         let doc_id = get_string("doc_id");
         let source = get_string("dataset_source");
         let score = hit.score;
 
+        received_confidences.push(score);
+
         println!("[{}] Score: {:.4} | ID: {} [{}]", i + 1, score, doc_id, source);
         println!("    Title: {}", title);
         let abstract_text = get_string("abstract");
+        received_abstracts.push(abstract_text);
         println!("    Snippet: {}...", &abstract_text[..200.min(abstract_text.len())]);
         println!("--------------------------------------------------");
     }
-    
-    // Extract the abstaracts from the JSON response
-    let mut received_abstracts = Vec::new();
-    
 
+    if received_abstracts.is_empty() {
+        println!("Warning: Qdrant returned results, but no 'abstract' field was found in the payload.");
+        return HttpResponse::InternalServerError().body("Qdrant returned results, but no 'abstract' field was found in the payload.");
+    }
 
     // Dummy response to ensure the routing works before adding ML logic
     let dummy_response = VerifyResponse {
