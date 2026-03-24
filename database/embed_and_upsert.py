@@ -59,7 +59,7 @@ def embed_and_upsert(qdrant, model, filename, batchsize=500):
     with jsonlines.open(filename) as reader:
         for doc in reader:
             # 1. Join the abstract sentences into single string
-            joined_abstract = "".join(doc["abstract"])
+            joined_abstract = " ".join(doc["abstract"])
 
             # 2. Format the joined abstract for embedding
             # Format for SPECTER 2: Title + [SEP] + Abstract

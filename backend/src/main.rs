@@ -122,29 +122,31 @@ async fn verify_claim(
 
         let score = hit.score;
 
-        println!("--------------------------------------------------");
+        /* println!("--------------------------------------------------");
         println!("Score: {:.4} | Title: {} [{}]", score, title, source);
-        println!("--------------------------------------------------");
+        println!("--------------------------------------------------"); */
 
-        // Implement sentence level chunking for the abstract
-        let sentences: Vec<&str> = abstract_text.split(". ").collect();
+        // Implement sliding window chunking for the abstract
+        let window_size = if sentences.len() > 1 { 2 } else { 1 };
 
         // We take the max of the confidences from each sentence to represent the document's overall support/refute/neutral score
         let mut doc_max_support: f32 = 0.0;
         let mut doc_max_refute: f32 = 0.0;
         let mut doc_max_neutral: f32 = 0.0;
 
-        for sentence in sentences {
-            let clean_sentence = sentence.trim();
-            if clean_sentence.is_empty() {
+        for window in sentences.windows(window_size) {
+            let chunk = window.join(". ");
+            let clean_chunk = chunk.trim();
+
+            if clean_chunk.is_empty() {
                 continue;
             }
 
             // Tokenize the claim and abstract text. The DeBERTa tokenizer automatically inserts the [SEP] token between them.
             // DeBERTa is trained to read Text A (The Premise) and decide if it supports or refutes Text B (The Hypothesis).
             let encoding = data.deberta_tokenizer
-                .encode((abstract_text, claim), true)
-                .expect("Failed to tokenize claim and abstract text");
+                .encode((clean_chunk, claim), true)
+                .expect("Failed to tokenize chunk {} and claim", clean_chunk);
 
             // DeBERTa does not require token_type_ids, so we do not include it in the inputs.
             let input_ids: Vec<i64> = encoding.get_ids().iter().map(|&x| x as i64).collect();
@@ -178,6 +180,8 @@ async fn verify_claim(
             doc_max_support = doc_max_support.max(support_prob);
             doc_max_neutral = doc_max_neutral.max(neutral_prob);
         }
+
+        println!("title: {}, doc_max_support: {}, doc_max_refute: {}, doc_max_neutral: {}", title, doc_max_support, doc_max_refute, doc_max_neutral);
 
         // Calculate the stance and confidence of the evidence document
         let mut stance = "NEUTRAL".to_string();
@@ -230,7 +234,7 @@ async fn verify_claim(
         aggregate_confidence = evidence_list.iter().map(|e| e.confidence).fold(0.0, f32::max);
     }
 
-    println!("Number of strongly supporting documents: {} (Support Confidence: {:.2}%)", support_count, avg_support * 100.0);
+    println!("\nNumber of strongly supporting documents: {} (Support Confidence: {:.2}%)", support_count, avg_support * 100.0);
     println!("Number of strongly refuting documents: {} (Refute Confidence: {:.2}%)", refute_count, avg_refute * 100.0);
 
     let response = VerifyResponse {
