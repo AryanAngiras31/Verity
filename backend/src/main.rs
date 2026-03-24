@@ -93,11 +93,15 @@ async fn verify_claim(
 
     // DeBERTa Cross Encoder Inference
     let mut evidence_list: Vec<Evidence> = Vec::new();
-    let mut total_support_score = 0.0;
-    let mut total_refute_score = 0.0;
 
     // Get the Mutex lock for the DeBERTa model
     let mut deberta = data.deberta_model.lock().expect("Could not get Mutex lock for DeBERTa model");
+
+    // TRACKERS FOR THRESHOLDED MEAN POOLING
+    let mut valid_support_sum = 0.0;
+    let mut valid_refute_sum = 0.0;
+    let mut support_count = 0.0;
+    let mut refute_count = 0.0;
 
     for hit in response.result.iter() {
         let payload = &hit.payload;
@@ -118,12 +122,13 @@ async fn verify_claim(
 
         // FIX: Truncate the abstract to ~1500 characters (approx 300 tokens).
         // This guarantees we never overflow DeBERTa's 512 token limit
-        let abstract_text = &raw_abstract[..raw_abstract.len().min(100)];
+        let abstract_text = &raw_abstract[..raw_abstract.len().min(1500)];
 
         let score = hit.score;
-        println!("Score: {:.4} | Title: {} [{}]", score, title, source);
+
+        /* println!("Score: {:.4} | Title: {} [{}]", score, title, source);
         println!("Abstract: {}", abstract_text);
-        println!("--------------------------------------------------");
+        println!("--------------------------------------------------"); */
 
         // Tokenize the claim and abstract text. The DeBERTa tokenizer automatically inserts the [SEP] token between them.
         // DeBERTa is trained to read Text A (The Premise) and decide if it supports or refutes Text B (The Hypothesis).
@@ -158,10 +163,7 @@ async fn verify_claim(
         let support_prob = softmax_probs[1];
         let neutral_prob = softmax_probs[2];
 
-        // Calculate evidence verdict and confidence
-        total_refute_score += refute_prob;
-        total_support_score += support_prob;
-
+        // Calculate the stance and confidence of the evidence document
         let mut stance = "NEUTRAL".to_string();
         let mut confidence = neutral_prob;
 
@@ -171,6 +173,15 @@ async fn verify_claim(
         } else if refute_prob > support_prob && refute_prob > neutral_prob {
             stance = "REFUTE".to_string();
             confidence = refute_prob;
+        }
+
+        // Apply Threshold Filtering: Only count highly confident logical stances
+        if stance == "SUPPORT" && confidence > 0.65 {
+            valid_support_sum += confidence;
+            support_count += 1.0;
+        } else if stance == "REFUTE" && confidence > 0.65 {
+            valid_refute_sum += confidence;
+            refute_count += 1.0;
         }
 
         evidence_list.push(types::Evidence {
@@ -184,10 +195,9 @@ async fn verify_claim(
 
     drop(deberta);
 
-    // Calculate the final verdict and aggregate confidence
-    let num_docs = evidence_list.len() as f32;
-    let avg_support = total_support_score / num_docs;
-    let avg_refute = total_refute_score / num_docs;
+    // Verdict aggregation (Thresholded Mean Pooling)
+    let avg_support = if support_count > 0.0 { valid_support_sum / support_count } else { 0.0 };
+    let avg_refute = if refute_count > 0.0 { valid_refute_sum / refute_count } else { 0.0 };
 
     let mut final_verdict = "NEUTRAL".to_string();
     let mut aggregate_confidence = 0.0;
@@ -199,7 +209,13 @@ async fn verify_claim(
     } else if avg_refute > avg_support {
         final_verdict = "FALSE".to_string();
         aggregate_confidence = avg_refute;
+    } else if evidence_list.iter().any(|e| e.stance == "NEUTRAL") {
+        // If everything was filtered out, default to the highest Neutral score
+        aggregate_confidence = evidence_list.iter().map(|e| e.confidence).fold(0.0, f32::max);
     }
+
+    println!("Number of strongly supporting documents: {} (Support Confidence: {:.2}%)", support_count, avg_support * 100.0);
+    println!("Number of strongly refuting documents: {} (Refute Confidence: {:.2}%)", refute_count, avg_refute * 100.0);
 
     let response = VerifyResponse {
         final_verdict,
