@@ -118,61 +118,77 @@ async fn verify_claim(
         let source = get_string("dataset_source");
 
         // Extract the abstract
-        let raw_abstract = get_string("abstract");
-
-        // FIX: Truncate the abstract to ~1500 characters (approx 300 tokens).
-        // This guarantees we never overflow DeBERTa's 512 token limit
-        let abstract_text = &raw_abstract[..raw_abstract.len().min(1500)];
+        let abstract_text = get_string("abstract");
 
         let score = hit.score;
 
-        /* println!("Score: {:.4} | Title: {} [{}]", score, title, source);
-        println!("Abstract: {}", abstract_text);
-        println!("--------------------------------------------------"); */
+        println!("--------------------------------------------------");
+        println!("Score: {:.4} | Title: {} [{}]", score, title, source);
+        println!("--------------------------------------------------");
 
-        // Tokenize the claim and abstract text. The DeBERTa tokenizer automatically inserts the [SEP] token between them.
-        // DeBERTa is trained to read Text A (The Premise) and decide if it supports or refutes Text B (The Hypothesis).
-        let encoding = data.deberta_tokenizer
-            .encode((abstract_text, claim), true)
-            .expect("Failed to tokenize claim and abstract text");
+        // Implement sentence level chunking for the abstract
+        let sentences: Vec<&str> = abstract_text.split(". ").collect();
 
-        // DeBERTa does not require token_type_ids, so we do not include it in the inputs.
-        let input_ids: Vec<i64> = encoding.get_ids().iter().map(|&x| x as i64).collect();
-        let attention_mask: Vec<i64> = encoding.get_attention_mask().iter().map(|&x| x as i64).collect();
+        // We take the max of the confidences from each sentence to represent the document's overall support/refute/neutral score
+        let mut doc_max_support: f32 = 0.0;
+        let mut doc_max_refute: f32 = 0.0;
+        let mut doc_max_neutral: f32 = 0.0;
 
-        let shape = vec![1, input_ids.len() as i64];
+        for sentence in sentences {
+            let clean_sentence = sentence.trim();
+            if clean_sentence.is_empty() {
+                continue;
+            }
 
-        let outputs = deberta.run(ort::inputs![
-            "input_ids" => Tensor::from_array((shape.clone(), input_ids)).unwrap(),
-            "attention_mask" => Tensor::from_array((shape.clone(), attention_mask)).unwrap(),
-        ]).expect("DeBERTa inference failed");
+            // Tokenize the claim and abstract text. The DeBERTa tokenizer automatically inserts the [SEP] token between them.
+            // DeBERTa is trained to read Text A (The Premise) and decide if it supports or refutes Text B (The Hypothesis).
+            let encoding = data.deberta_tokenizer
+                .encode((abstract_text, claim), true)
+                .expect("Failed to tokenize claim and abstract text");
 
-        // DeBERTa's SequenceClassification exports the final layer as "logits"
-        let (_shape, logits_data) = outputs["logits"].try_extract_tensor::<f32>().unwrap();
-        let logits = &logits_data[0..3];
+            // DeBERTa does not require token_type_ids, so we do not include it in the inputs.
+            let input_ids: Vec<i64> = encoding.get_ids().iter().map(|&x| x as i64).collect();
+            let attention_mask: Vec<i64> = encoding.get_attention_mask().iter().map(|&x| x as i64).collect();
 
-        // Calculate SoftMax for logits. Maps logits to a range of 0 to 1 making sure they add up to 1.
-        let max_logit: f32 = logits[0].max(logits[1].max(logits[2]));
-        let exp_logits: Vec<f32> = logits.iter().map(|&x| (x-max_logit).exp()).collect();
-        let sum_logits: f32 = exp_logits.iter().sum();
-        let softmax_probs: Vec<f32> = exp_logits.iter().map(|&x| x / sum_logits).collect();
+            let shape = vec![1, input_ids.len() as i64];
 
-        // HuggingFace DeBERTa-v3-small NLI Mapping:
-        // 0 -> Contradiction (Refute), 1 -> Entailment (Support), 2 -> Neutral
-        let refute_prob = softmax_probs[0];
-        let support_prob = softmax_probs[1];
-        let neutral_prob = softmax_probs[2];
+            let outputs = deberta.run(ort::inputs![
+                "input_ids" => Tensor::from_array((shape.clone(), input_ids)).unwrap(),
+                "attention_mask" => Tensor::from_array((shape.clone(), attention_mask)).unwrap(),
+            ]).expect("DeBERTa inference failed");
+
+            // DeBERTa's SequenceClassification exports the final layer as "logits"
+            let (_shape, logits_data) = outputs["logits"].try_extract_tensor::<f32>().unwrap();
+            let logits = &logits_data[0..3];
+
+            // Calculate SoftMax for logits. Maps logits to a range of 0 to 1 making sure they add up to 1.
+            let max_logit: f32 = logits[0].max(logits[1].max(logits[2]));
+            let exp_logits: Vec<f32> = logits.iter().map(|&x| (x-max_logit).exp()).collect();
+            let sum_logits: f32 = exp_logits.iter().sum();
+            let softmax_probs: Vec<f32> = exp_logits.iter().map(|&x| x / sum_logits).collect();
+
+            // HuggingFace DeBERTa-v3-small NLI Mapping:
+            // 0 -> Contradiction (Refute), 1 -> Entailment (Support), 2 -> Neutral
+            let refute_prob = softmax_probs[0];
+            let support_prob = softmax_probs[1];
+            let neutral_prob = softmax_probs[2];
+
+            // Track the highest scores found across ALL sentences in this document
+            doc_max_refute = doc_max_refute.max(refute_prob);
+            doc_max_support = doc_max_support.max(support_prob);
+            doc_max_neutral = doc_max_neutral.max(neutral_prob);
+        }
 
         // Calculate the stance and confidence of the evidence document
         let mut stance = "NEUTRAL".to_string();
-        let mut confidence = neutral_prob;
+        let mut confidence = doc_max_neutral;
 
-        if support_prob > refute_prob && support_prob > neutral_prob {
+        if doc_max_support > doc_max_refute && doc_max_support > doc_max_neutral {
             stance = "SUPPORT".to_string();
-            confidence = support_prob;
-        } else if refute_prob > support_prob && refute_prob > neutral_prob {
+            confidence = doc_max_support;
+        } else if doc_max_refute > doc_max_support && doc_max_refute > doc_max_neutral {
             stance = "REFUTE".to_string();
-            confidence = refute_prob;
+            confidence = doc_max_refute;
         }
 
         // Apply Threshold Filtering: Only count highly confident logical stances
