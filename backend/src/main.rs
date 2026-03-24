@@ -73,7 +73,6 @@ async fn verify_claim(
     };
 
     // Query Qdrant for top 5 matches
-    println!("Querying Qdrant for top 5 matches...");
     let query_request = QueryPointsBuilder::new(COLLECTION_NAME)
         .query(embedding)
         .limit(5)
@@ -93,10 +92,9 @@ async fn verify_claim(
     };
 
     // DeBERTa Cross Encoder Inference
-    let mut evidence_list: Vec<types::Evidence> = Vec::new();
+    let mut evidence_list: Vec<Evidence> = Vec::new();
     let mut total_support_score = 0.0;
     let mut total_refute_score = 0.0;
-    let mut total_neutral_score = 0.0;
 
     // Get the Mutex lock for the DeBERTa model
     let mut deberta = data.deberta_model.lock().expect("Could not get Mutex lock for DeBERTa model");
@@ -120,9 +118,15 @@ async fn verify_claim(
 
         // FIX: Truncate the abstract to ~1500 characters (approx 300 tokens).
         // This guarantees we never overflow DeBERTa's 512 token limit
-        let abstract_text = &raw_abstract[..raw_abstract.len().min(1500)];
+        let abstract_text = &raw_abstract[..raw_abstract.len().min(100)];
+
+        let score = hit.score;
+        println!("Score: {:.4} | Title: {} [{}]", score, title, source);
+        println!("Abstract: {}", abstract_text);
+        println!("--------------------------------------------------");
 
         // Tokenize the claim and abstract text. The DeBERTa tokenizer automatically inserts the [SEP] token between them.
+        // DeBERTa is trained to read Text A (The Premise) and decide if it supports or refutes Text B (The Hypothesis).
         let encoding = data.deberta_tokenizer
             .encode((abstract_text, claim), true)
             .expect("Failed to tokenize claim and abstract text");
@@ -157,7 +161,6 @@ async fn verify_claim(
         // Calculate evidence verdict and confidence
         total_refute_score += refute_prob;
         total_support_score += support_prob;
-        total_neutral_score += neutral_prob;
 
         let mut stance = "NEUTRAL".to_string();
         let mut confidence = neutral_prob;
@@ -185,16 +188,15 @@ async fn verify_claim(
     let num_docs = evidence_list.len() as f32;
     let avg_support = total_support_score / num_docs;
     let avg_refute = total_refute_score / num_docs;
-    let avg_neutral = total_neutral_score / num_docs;
 
     let mut final_verdict = "NEUTRAL".to_string();
-    let mut aggregate_confidence = avg_neutral;
+    let mut aggregate_confidence = 0.0;
 
     // The mathematically sound verdict: Whichever average probability is strictly the highest wins.
-    if avg_support > avg_refute && avg_support > avg_neutral {
+    if avg_support > avg_refute {
         final_verdict = "TRUE".to_string();
         aggregate_confidence = avg_support;
-    } else if avg_refute > avg_support && avg_refute > avg_neutral {
+    } else if avg_refute > avg_support {
         final_verdict = "FALSE".to_string();
         aggregate_confidence = avg_refute;
     }
@@ -218,7 +220,7 @@ async fn main() -> std::io::Result<()> {
     // 2. Initialize Qdrant Client (Connecting over the Docker network)
     let qdrant_url = env::var("QDRANT_URL").unwrap_or_else(|_| "http://qdrant:6334".to_string());
 
-    println!("Backend connecting to Qdrant at {}...", qdrant_url);
+    println!("\nBackend connecting to Qdrant at {}...", qdrant_url);
     let client = Qdrant::from_url(&qdrant_url)
         .build();
 
