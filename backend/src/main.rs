@@ -135,7 +135,7 @@ async fn verify_claim(
         let mut doc_max_neutral: f32 = 0.0;
 
         for window in sentences.windows(window_size) {
-            let chunk = window.join(". ");
+            let chunk = window.join(".");
             let clean_chunk = chunk.trim();
 
             if clean_chunk.is_empty() {
