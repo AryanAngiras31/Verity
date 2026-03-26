@@ -32,6 +32,7 @@ async fn verify_claim(
     let claim: &str = &req_body.claim;
 
     println!("\nReceived claim: {}", claim);
+    println!("--------------------------------------------------");
 
     // Embed the claim using the Specter 2
     let encoding = data.specter_tokenizer.encode(claim, true).expect("Failed to encode claim using SPECTER 2");
@@ -76,6 +77,7 @@ async fn verify_claim(
     let query_request = QueryPointsBuilder::new(COLLECTION_NAME)
         .query(embedding)
         .limit(5)
+        .score_threshold(0.80)
         .with_payload(true);
 
     let response_result = data.qdrant_client
@@ -178,7 +180,7 @@ async fn verify_claim(
             doc_max_support = doc_max_support.max(support_prob);
         }
 
-        /*println!("title: {}, doc_max_support: {}, doc_max_refute: {}, doc_max_neutral: {}", title, doc_max_support, doc_max_refute, doc_max_neutral);*/
+        println!("title: {}, doc_max_support: {}, doc_max_refute: {}", title, doc_max_support, doc_max_refute);
 
         // Calculate the stance and confidence of the evidence document
         let stance;
