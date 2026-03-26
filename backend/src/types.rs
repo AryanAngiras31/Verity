@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Deserialize)]
 pub struct VerifyRequest {
     pub claim: String,
+    pub qdrant_threshold: Option<f32>,
 }
 
 // The outgoing response payload
