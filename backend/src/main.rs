@@ -122,36 +122,26 @@ async fn verify_claim(
 
         let _score = hit.score;
 
-        let sentences: Vec<&str> = abstract_text
+        let sentences: Vec<String> = abstract_text
             .split('.')
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
+            .map(|s| format!("{}.", s))
             .collect();
 
         /*println!("--------------------------------------------------");
         println!("Score: {:.4} | Title: {} [{}]", _score, title, source);
         println!("--------------------------------------------------");*/
 
-        // Implement sliding window chunking for the abstract
-        let window_size = if sentences.len() > 1 { 2 } else { 1 };
-
         // We take the max of the confidences from each sentence to represent the document's overall support/refute/neutral score
         let mut doc_max_support: f32 = 0.0;
         let mut doc_max_refute: f32 = 0.0;
-        let mut doc_max_neutral: f32 = 0.0;
 
-        for window in sentences.windows(window_size) {
-            let chunk = window.join(". ");
-            let clean_chunk = chunk.trim();
-
-            if clean_chunk.is_empty() {
-                continue;
-            }
-
+        for clean_chunk in sentences {
             // Tokenize the claim and abstract text. The DeBERTa tokenizer automatically inserts the [SEP] token between them.
             // DeBERTa is trained to read Text A (The Premise) and decide if it supports or refutes Text B (The Hypothesis).
             let encoding = data.deberta_tokenizer
-                .encode((clean_chunk, claim), true)
+                .encode((clean_chunk.as_str(), claim), true)
                 .expect("Failed to tokenize chunk and claim");
 
             // DeBERTa does not require token_type_ids, so we do not include it in the inputs.
@@ -186,7 +176,6 @@ async fn verify_claim(
             // Track the highest scores found across ALL sentences in this document
             doc_max_refute = doc_max_refute.max(refute_prob);
             doc_max_support = doc_max_support.max(support_prob);
-            doc_max_neutral = doc_max_neutral.max(neutral_prob);
         }
 
         /*println!("title: {}, doc_max_support: {}, doc_max_refute: {}, doc_max_neutral: {}", title, doc_max_support, doc_max_refute, doc_max_neutral);*/
