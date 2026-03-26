@@ -120,11 +120,17 @@ async fn verify_claim(
         // Extract the abstract
         let abstract_text = get_string("abstract");
 
-        let score = hit.score;
+        let _score = hit.score;
 
-        /* println!("--------------------------------------------------");
-        println!("Score: {:.4} | Title: {} [{}]", score, title, source);
-        println!("--------------------------------------------------"); */
+        let sentences: Vec<&str> = abstract_text
+            .split('.')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        /*println!("--------------------------------------------------");
+        println!("Score: {:.4} | Title: {} [{}]", _score, title, source);
+        println!("--------------------------------------------------");*/
 
         // Implement sliding window chunking for the abstract
         let window_size = if sentences.len() > 1 { 2 } else { 1 };
@@ -135,7 +141,7 @@ async fn verify_claim(
         let mut doc_max_neutral: f32 = 0.0;
 
         for window in sentences.windows(window_size) {
-            let chunk = window.join(".");
+            let chunk = window.join(". ");
             let clean_chunk = chunk.trim();
 
             if clean_chunk.is_empty() {
@@ -146,7 +152,7 @@ async fn verify_claim(
             // DeBERTa is trained to read Text A (The Premise) and decide if it supports or refutes Text B (The Hypothesis).
             let encoding = data.deberta_tokenizer
                 .encode((clean_chunk, claim), true)
-                .expect("Failed to tokenize chunk {} and claim", clean_chunk);
+                .expect("Failed to tokenize chunk and claim");
 
             // DeBERTa does not require token_type_ids, so we do not include it in the inputs.
             let input_ids: Vec<i64> = encoding.get_ids().iter().map(|&x| x as i64).collect();
@@ -175,24 +181,30 @@ async fn verify_claim(
             let support_prob = softmax_probs[1];
             let neutral_prob = softmax_probs[2];
 
+            println!("Chunk: {}, \nrefute_prob: {:.4}, support_prob: {:.4}, neutral_prob: {:.4}\n", clean_chunk, refute_prob, support_prob, neutral_prob);
+
             // Track the highest scores found across ALL sentences in this document
             doc_max_refute = doc_max_refute.max(refute_prob);
             doc_max_support = doc_max_support.max(support_prob);
             doc_max_neutral = doc_max_neutral.max(neutral_prob);
         }
 
-        println!("title: {}, doc_max_support: {}, doc_max_refute: {}, doc_max_neutral: {}", title, doc_max_support, doc_max_refute, doc_max_neutral);
+        /*println!("title: {}, doc_max_support: {}, doc_max_refute: {}, doc_max_neutral: {}", title, doc_max_support, doc_max_refute, doc_max_neutral);*/
 
         // Calculate the stance and confidence of the evidence document
-        let mut stance = "NEUTRAL".to_string();
-        let mut confidence = doc_max_neutral;
+        let stance;
+        let confidence;
 
-        if doc_max_support > doc_max_refute && doc_max_support > doc_max_neutral {
+        if doc_max_support > doc_max_refute && doc_max_support > 0.65 {
             stance = "SUPPORT".to_string();
             confidence = doc_max_support;
-        } else if doc_max_refute > doc_max_support && doc_max_refute > doc_max_neutral {
+        } else if doc_max_refute > doc_max_support && doc_max_refute > 0.65 {
             stance = "REFUTE".to_string();
             confidence = doc_max_refute;
+        } else {
+            // If neither signal was strong enough, it defaults to Neutral
+            stance = "NEUTRAL".to_string();
+            confidence = 1.0 - doc_max_support - doc_max_refute; // Rough estimate of neutral weight
         }
 
         // Apply Threshold Filtering: Only count highly confident logical stances
