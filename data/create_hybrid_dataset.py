@@ -4,10 +4,12 @@ import sys
 
 import jsonlines
 from datasets import load_dataset
+from collections import defaultdict
 
 # Define the expected output files
 CORPUS_FILE = "/app/output/hybrid_corpus.jsonl"
 CLAIMS_FILE = "/app/output/hybrid_claims.jsonl"
+CONSOLIDATED_CLAIMS_FILE = "/app/output/hybrid_claims_consolidated.jsonl"
 
 
 def normalize_title(title):
@@ -52,6 +54,7 @@ def consolidate_hf_datasets():
 
     # --- 1. Process SciFact ---
     print("Processing SciFact...")
+    # Extract corpus data
     for doc in scifact_corpus:
         doc_id = str(doc["doc_id"])
         title_norm = normalize_title(doc.get("title", ""))
@@ -138,13 +141,45 @@ def consolidate_hf_datasets():
         }
         master_claims.append(unified_claim)
 
+    # Create consolidated claims
+    print("Consolidating claims for benchmark (one label per claim)...")
+    grouped_claims = defaultdict(list)
+
+    # Group every evidence label associated with each unique claim string
+    for item in master_claims:
+        claim_text = item["claim"]
+        # Extract the label from the evidence dict
+        for doc_id, evidence_list in item["evidence"].items():
+            for ev in evidence_list:
+                label = ev.get("label", "NEUTRAL")
+                if label:
+                    grouped_claims[claim_text].append(label)
+
+    consolidated_list = []
+    for claim_text, labels in grouped_claims.items():
+        # Numerical mapping for "Mean" calculation
+        score = 0
+        for label in labels:
+            if label == "SUPPORT": score += 1
+            elif label == "CONTRADICT": score -= 1
+            # NEUTRAL contributes 0
+
+        final_label = "NEUTRAL"
+        if score > 0: final_label = "SUPPORT"
+        elif score < 0: final_label = "CONTRADICT"
+
+        consolidated_list.append({
+            "claim": claim_text,
+            "label": final_label,
+            "evidence_count": len(labels)
+        })
+
     print(f"Total Unique Documents: {len(master_corpus)}")
     print(f"Total Claims: {len(master_claims)}")
+    print(f"Total Consolidated Claims for Benchmark: {len(consolidated_list)}")
 
     # --- 3. Export to JSONL ---
-    print(
-        "Writing to hybrid_corpus.jsonl and hybrid_claims.jsonl to the mounted volume..."
-    )
+    print("Writing to hybrid_corpus.jsonl and hybrid_claims.jsonl to the mounted volume...")
     with jsonlines.open("/app/output/hybrid_corpus.jsonl", mode="w") as writer:
         for doc in master_corpus.values():
             writer.write(doc)
@@ -152,6 +187,10 @@ def consolidate_hf_datasets():
     with jsonlines.open("/app/output/hybrid_claims.jsonl", mode="w") as writer:
         for claim in master_claims:
             writer.write(claim)
+
+     with jsonlines.open(CONSOLIDATED_CLAIMS_FILE, mode="w") as writer:
+        for entry in consolidated_list:
+            writer.write(entry)
 
     print("Consolidation Complete!")
 

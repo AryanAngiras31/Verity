@@ -43,7 +43,7 @@ def test_claim_against_api(claim, threshold):
             return res.json().get("final_verdict", "ERROR")
         return "ERROR"
     except Exception as e:
-        return "CONNECTION_FAILED"
+        return e
 
 
 def run_benchmark(dataset_path, threshold, limit=50):
@@ -73,6 +73,9 @@ def run_benchmark(dataset_path, threshold, limit=50):
             total += 1
             if total % 10 == 0:
                 print(f"  Processed {total}/{limit} claims...")
+                print(
+                    f"claim: {claim}, ground_truth: {ground_truth}, prediction: {prediction}"
+                )
 
     accuracy = (correct / total) * 100 if total > 0 else 0
     print(f"Pass Complete! Accuracy: {accuracy:.2f}% ({correct}/{total})")
