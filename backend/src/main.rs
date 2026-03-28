@@ -175,14 +175,14 @@ async fn verify_claim(
             let support_prob = softmax_probs[1];
             let neutral_prob = softmax_probs[2];
 
-            println!("Chunk: {}, \nrefute_prob: {:.4}, support_prob: {:.4}, neutral_prob: {:.4}\n", clean_chunk, refute_prob, support_prob, neutral_prob);
+            /*println!("Chunk: {}, \nrefute_prob: {:.4}, support_prob: {:.4}, neutral_prob: {:.4}\n", clean_chunk, refute_prob, support_prob, neutral_prob);*/
 
             // Track the highest scores found across ALL sentences in this document
             doc_max_refute = doc_max_refute.max(refute_prob);
             doc_max_support = doc_max_support.max(support_prob);
         }
 
-        println!("title: {}, doc_max_support: {}, doc_max_refute: {}", title, doc_max_support, doc_max_refute);
+        /*println!("title: {}, doc_max_support: {}, doc_max_refute: {}", title, doc_max_support, doc_max_refute);*/
 
         // Calculate the stance and confidence of the evidence document
         let stance;

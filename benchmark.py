@@ -1,3 +1,4 @@
+# docker run --rm -it --network host -v "$(pwd):/app" -w /app python:3.10-slim bash -c "pip install requests && API_URL=http://localhost:8080/api/verify python benchmark.py"
 import json
 import os
 import time
@@ -24,12 +25,10 @@ def parse_ground_truth(evidence_dict):
     raw_label = annotations[0].get("label", "")
 
     label_map = {
-        "SUPPORTS": "TRUE",
         "SUPPORT": "TRUE",
-        "REFUTES": "FALSE",
         "CONTRADICT": "FALSE",
         "NEUTRAL": "NEUTRAL",
-        "NOINFO": "NEUTRAL",
+        "": "NEUTRAL",
     }
 
     return label_map.get(raw_label, "NEUTRAL")
@@ -111,7 +110,7 @@ if __name__ == "__main__":
     DATASET_FILE = "data/hybrid_claims.jsonl"
 
     # We will test 5 different strictness levels for the Qdrant Bouncer
-    thresholds = [0.70, 0.75, 0.80, 0.85, 0.90]
+    thresholds = [0.80, 0.85, 0.90, 0.92, 0.94]
 
     # I set the limit to 50 so your first test finishes in ~10 seconds.
     # Once you confirm it works, change limit to 500 to evaluate the whole corpus!
