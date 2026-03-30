@@ -293,6 +293,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(app_state.clone())
             .service(verify_claim)
     })
+    .workers(2)     // Limit to 2 workers for development
     .bind(("0.0.0.0", 8080))?
     .run()
     .await
