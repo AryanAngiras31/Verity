@@ -34,10 +34,12 @@ async fn verify_claim(
     println!("\nReceived claim: {}", claim);
     println!("--------------------------------------------------");
 
-    // Embed the claim using the Specter 2
-    let encoding = data.specter_tokenizer.encode(claim, true).expect("Failed to encode claim using SPECTER 2");
+    // --- NEW FIX: BGE-Small strictly requires this exact prefix for search queries! ---
+    let bge_query = format!("Represent this sentence for searching relevant passages: {}", claim);
+    // Embed the claim using the BGE Small model
+    let encoding = data.specter_tokenizer.encode(bge_query, true).expect("Failed to encode claim using BGE");
 
-    // SPECTER 2 is build on a BERT style architecture and requires these three inputs
+    // BGE Small is build on a BERT style architecture and requires these three inputs
     // ONNX expects 64 bit integers for input ids and masks
 
     // Ids of the tokens in the sequence
