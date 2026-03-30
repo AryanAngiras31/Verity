@@ -173,9 +173,9 @@ async fn verify_claim(
             // 0 -> Contradiction (Refute), 1 -> Entailment (Support), 2 -> Neutral
             let refute_prob = softmax_probs[0];
             let support_prob = softmax_probs[1];
-            let neutral_prob = softmax_probs[2];
+            let _neutral_prob = softmax_probs[2];
 
-            /*println!("Chunk: {}, \nrefute_prob: {:.4}, support_prob: {:.4}, neutral_prob: {:.4}\n", clean_chunk, refute_prob, support_prob, neutral_prob);*/
+            /*println!("Chunk: {}, \nrefute_prob: {:.4}, support_prob: {:.4}, _neutral_prob: {:.4}\n", clean_chunk, refute_prob, support_prob, _neutral_prob);*/
 
             // Track the highest scores found across ALL sentences in this document
             doc_max_refute = doc_max_refute.max(refute_prob);
@@ -276,19 +276,19 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
-    // 4. Wrap client in Actix web::Data for thread-safe sharing
-    let app_state = web::Data::new(AppState {
-        qdrant_client: client,
-        specter_model: Mutex::new(Session::builder().unwrap().commit_from_file("models/specter2/model.onnx").expect("Failed to load Specter model")),
-        specter_tokenizer: Tokenizer::from_file("models/specter2/tokenizer.json").expect("Failed to load Specter tokenizer"),
-        deberta_model: Mutex::new(Session::builder().unwrap().commit_from_file("models/deberta/model.onnx").expect("Failed to load DeBERTa model")),
-        deberta_tokenizer: Tokenizer::from_file("models/deberta/tokenizer.json").expect("Failed to load DeBERTa tokenizer"),
-    });
-
     println!("Started Verity Rust API on 0.0.0.0:8080...");
 
     // 5. Start the HTTP Server
     HttpServer::new(move || {
+        // 4. Wrap client in Actix web::Data for thread-safe sharing
+        let app_state = web::Data::new(AppState {
+            qdrant_client: client.clone(),
+            specter_model: Mutex::new(Session::builder().unwrap().commit_from_file("models/specter2/model.onnx").expect("Failed to load Specter model")),
+            specter_tokenizer: Tokenizer::from_file("models/specter2/tokenizer.json").expect("Failed to load Specter tokenizer"),
+            deberta_model: Mutex::new(Session::builder().unwrap().commit_from_file("models/deberta/model.onnx").expect("Failed to load DeBERTa model")),
+            deberta_tokenizer: Tokenizer::from_file("models/deberta/tokenizer.json").expect("Failed to load DeBERTa tokenizer"),
+        });
+
         App::new()
             .app_data(app_state.clone())
             .service(verify_claim)

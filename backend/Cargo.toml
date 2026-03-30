@@ -16,10 +16,10 @@ serde_json = "1.0"
 
 # Qdrant Database Client (Uses gRPC on port 6334)
 qdrant-client = "1.7.0"
-tonic = "0.10" # Required underlying gRPC library for Qdrant
+tonic = "0.10"          # Required underlying gRPC library for Qdrant
 
 # ONNX Runtime (for SPECTER 2 and DeBERTa)
-ort = "2.0.0-rc.9"
+ort = "2.0.0-rc.12"
 
 # Hugging Face tokenizers (to convert strings into token IDs)
 tokenizers = "0.19"
