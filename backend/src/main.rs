@@ -188,10 +188,10 @@ async fn verify_claim(
         let stance;
         let confidence;
 
-        if doc_max_support > doc_max_refute && doc_max_support > 0.65 {
+        if doc_max_support > doc_max_refute && doc_max_support > 0.50 {
             stance = "SUPPORT".to_string();
             confidence = doc_max_support;
-        } else if doc_max_refute > doc_max_support && doc_max_refute > 0.65 {
+        } else if doc_max_refute > doc_max_support && doc_max_refute > 0.50 {
             stance = "REFUTE".to_string();
             confidence = doc_max_refute;
         } else {
@@ -201,10 +201,10 @@ async fn verify_claim(
         }
 
         // Apply Threshold Filtering: Only count highly confident logical stances
-        if stance == "SUPPORT" && confidence > 0.65 {
+        if stance == "SUPPORT" && confidence > 0.55 {
             valid_support_sum += confidence;
             support_count += 1.0;
-        } else if stance == "REFUTE" && confidence > 0.65 {
+        } else if stance == "REFUTE" && confidence > 0.55 {
             valid_refute_sum += confidence;
             refute_count += 1.0;
         }
@@ -228,10 +228,10 @@ async fn verify_claim(
     let mut aggregate_confidence = 0.0;
 
     // The mathematically sound verdict: Whichever average probability is strictly the highest wins.
-    if avg_support > avg_refute {
+    if valid_support_sum > valid_refute_sum {
         final_verdict = "TRUE".to_string();
         aggregate_confidence = avg_support;
-    } else if avg_refute > avg_support {
+    } else if valid_refute_sum > valid_support_sum {
         final_verdict = "FALSE".to_string();
         aggregate_confidence = avg_refute;
     } else if evidence_list.iter().any(|e| e.stance == "NEUTRAL") {
