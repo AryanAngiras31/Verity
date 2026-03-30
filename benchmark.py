@@ -9,21 +9,14 @@ import requests
 API_URL = os.getenv("API_URL", "http://localhost:8080/api/verify")
 
 
-def parse_ground_truth(evidence_dict):
-    """Maps the messy dataset labels to our API's TRUE/FALSE/NEUTRAL format."""
-    if not evidence_dict:
-        return "NEUTRAL"
+class label_proportions:
+    def __init__(self):
+        self.support = 0
+        self.contradict = 0
+        self.neutral = 0
 
-    # Extract the first document ID and its annotations
-    doc_id = list(evidence_dict.keys())[0]
-    annotations = evidence_dict[doc_id]
 
-    # If the document ID is empty or annotations are empty, it's neutral
-    if doc_id == "" or not annotations:
-        return "NEUTRAL"
-
-    raw_label = annotations[0].get("label", "")
-
+def parse_ground_truth(label):
     label_map = {
         "SUPPORT": "TRUE",
         "CONTRADICT": "FALSE",
@@ -31,7 +24,7 @@ def parse_ground_truth(evidence_dict):
         "": "NEUTRAL",
     }
 
-    return label_map.get(raw_label, "NEUTRAL")
+    return label_map.get(label, "NEUTRAL")
 
 
 def test_claim_against_api(claim, threshold):
@@ -52,6 +45,9 @@ def run_benchmark(dataset_path, threshold, limit=50):
     correct = 0
     total = 0
 
+    model_label_proportions = label_proportions()
+    true_label_proportions = label_proportions()
+
     with open(dataset_path, "r") as f:
         for line in f:
             if total >= limit:
@@ -59,7 +55,7 @@ def run_benchmark(dataset_path, threshold, limit=50):
 
             data = json.loads(line)
             claim = data["claim"]
-            ground_truth = parse_ground_truth(data["evidence"])
+            ground_truth = parse_ground_truth(data["label"])
 
             prediction = test_claim_against_api(claim, threshold)
 
@@ -67,18 +63,36 @@ def run_benchmark(dataset_path, threshold, limit=50):
                 print("Could not connect to Rust API. Is it running?")
                 return 0
 
+            match prediction:
+                case "TRUE":
+                    model_label_proportions.support += 1
+                case "FALSE":
+                    model_label_proportions.contradict += 1
+                case "NEUTRAL":
+                    model_label_proportions.neutral += 1
+            match ground_truth:
+                case "TRUE":
+                    true_label_proportions.support += 1
+                case "FALSE":
+                    true_label_proportions.contradict += 1
+                case "NEUTRAL":
+                    true_label_proportions.neutral += 1
+
             if prediction == ground_truth:
                 correct += 1
 
             total += 1
             if total % 10 == 0:
                 print(f"  Processed {total}/{limit} claims...")
-                print(
-                    f"claim: {claim}, ground_truth: {ground_truth}, prediction: {prediction}"
-                )
 
     accuracy = (correct / total) * 100 if total > 0 else 0
     print(f"Pass Complete! Accuracy: {accuracy:.2f}% ({correct}/{total})")
+    print(
+        f"Model Label Proportions: Support={model_label_proportions.support / total:.2f}, Contradict={model_label_proportions.contradict / total:.2f}, Neutral={model_label_proportions.neutral / total:.2f}"
+    )
+    print(
+        f"True Label Proportions: Support={true_label_proportions.support / total:.2f}, Contradict={true_label_proportions.contradict / total:.2f}, Neutral={true_label_proportions.neutral / total:.2f}"
+    )
     return accuracy
 
 
@@ -110,10 +124,10 @@ def hyperparameter_tuning(dataset_path, thresholds_to_test, limit=50):
 
 
 if __name__ == "__main__":
-    DATASET_FILE = "data/hybrid_claims.jsonl"
+    DATASET_FILE = "data/hybrid_claims_consolidated.jsonl"
 
     # We will test 5 different strictness levels for the Qdrant Bouncer
-    thresholds = [0.80, 0.85, 0.90, 0.92, 0.94]
+    thresholds = [0.70, 0.75, 0.80, 0.85, 0.90, 0.95]
 
     # I set the limit to 50 so your first test finishes in ~10 seconds.
     # Once you confirm it works, change limit to 500 to evaluate the whole corpus!
