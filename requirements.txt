@@ -5,7 +5,7 @@ annotated-types==0.7.0
 anyio==4.12.1
 async-timeout==5.0.1
 attrs==26.1.0
-adapters>=0.1.1
+adapters==1.2.0
 certifi==2026.2.25
 charset-normalizer==3.4.6
 coloredlogs==15.0.1
@@ -64,10 +64,10 @@ sentencepiece==0.2.1
 six==1.17.0
 sympy==1.13.1
 threadpoolctl==3.6.0
-tokenizers==0.22.2
+tokenizers==0.21.0
 torch==2.6.0+cpu
 tqdm==4.67.3
-transformers==4.57.6
+transformers==4.51.3
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 tzdata==2025.3
