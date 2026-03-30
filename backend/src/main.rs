@@ -126,13 +126,6 @@ async fn verify_claim(
 
         let _score = hit.score;
 
-        let sentences: Vec<String> = abstract_text
-            .split('.')
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .map(|s| format!("{}.", s))
-            .collect();
-
         /*println!("--------------------------------------------------");
         println!("Score: {:.4} | Title: {} [{}]", _score, title, source);
         println!("--------------------------------------------------");*/
@@ -141,7 +134,27 @@ async fn verify_claim(
         let mut doc_max_support: f32 = 0.0;
         let mut doc_max_refute: f32 = 0.0;
 
-        for clean_chunk in sentences {
+        let sentences: Vec<String> = abstract_text
+            .split('.')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| format!("{}.", s))
+            .collect();
+
+        // Add overlapping sliding window chunking to preserve context while preventing premise length dilution
+        let window_size = 2;
+        let mut chunks: Vec<String> = Vec::new();
+
+        if sentences.len() <= window_size {
+            // If the abstract is very short, just join the whole thing
+            chunks.push(sentences.join(" "));
+        } else {
+            for window in sentences.windows(window_size) {
+                chunks.push(window.join(" "));
+            }
+        }
+
+        for clean_chunk in chunks {
             // Tokenize the claim and abstract text. The DeBERTa tokenizer automatically inserts the [SEP] token between them.
             // DeBERTa is trained to read Text A (The Premise) and decide if it supports or refutes Text B (The Hypothesis).
             let encoding = data.deberta_tokenizer
