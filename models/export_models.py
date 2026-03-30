@@ -10,48 +10,23 @@ from transformers import AutoTokenizer
 
 
 def export_to_onnx():
-    # Define the output directory
     output_dir = Path("/app/models/")
     output_dir.mkdir(exist_ok=True)
 
-    print("\n--- 1. Exporting SPECTER 2 (Bi-Encoder) ---")
-    specter_id = "allenai/specter2_base"
-    adapter_id = "allenai/specter2_adhoc_query"
-    specter_dir = output_dir / "specter2"
-    specter_path = specter_dir / "model.onnx"  # Standard ONNX model filename
+    print("\n--- 1. Exporting BGE-Small (Bi-Encoder) ---")
+    bge_id = "BAAI/bge-small-en-v1.5"
+    bge_dir = output_dir / "bge_small"
+    bge_path = bge_dir / "model.onnx"
 
-    if specter_path.exists():
-        print(
-            f"SPECTER 2 ONNX model already exists at {specter_path}. Skipping export."
-        )
+    if bge_path.exists():
+        print(f"BGE-Small ONNX model already exists at {bge_path}. Skipping.")
     else:
-        print(f"Downloading base model {specter_id}...")
-        # 1. Load the base model using the adapters library
-        model = AutoAdapterModel.from_pretrained(specter_id)
-        tokenizer = AutoTokenizer.from_pretrained(specter_id)
-
-        # 2. Load and activate the ad-hoc query adapter
-        print(f"Loading adapter {adapter_id}...")
-        model.load_adapter(adapter_id, set_active=True)
-
-        # 3. FUSE the adapter weights into the base model permanently
-        print("Merging adapter weights into base model...")
-        model.merge_adapter(adapter_id)
-
-        # 4. Save the merged PyTorch model temporarily so Optimum can export it
-        print("Exporting fused model to ONNX...")
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model.save_pretrained(temp_dir)
-            tokenizer.save_pretrained(temp_dir)
-
-            # 5. Load the merged model using Optimum for ONNX export
-            ort_model = ORTModelForFeatureExtraction.from_pretrained(
-                temp_dir, export=True
-            )
-            ort_model.save_pretrained(specter_dir)
-            tokenizer.save_pretrained(specter_dir)
-
-        print(f"SPECTER 2 (Ad-Hoc Query) successfully saved to {specter_dir}\n")
+        print(f"Downloading and converting {bge_id}...")
+        bge_model = ORTModelForFeatureExtraction.from_pretrained(bge_id, export=True)
+        bge_tokenizer = AutoTokenizer.from_pretrained(bge_id)
+        bge_model.save_pretrained(bge_dir)
+        bge_tokenizer.save_pretrained(bge_dir)
+        print(f"BGE-Small successfully saved to {bge_dir}\n")
 
     print("\n--- 2. Exporting DeBERTa-v3 (Cross-Encoder) ---")
     deberta_id = "cross-encoder/nli-deberta-v3-small"

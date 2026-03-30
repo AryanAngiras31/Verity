@@ -127,8 +127,8 @@ if __name__ == "__main__":
     DATASET_FILE = "data/hybrid_claims_consolidated.jsonl"
 
     # We will test 5 different strictness levels for the Qdrant Bouncer
-    thresholds = [0.75, 80, 85]
+    thresholds = [0.70, 0.75, 0.80, 0.85, 0.90]
 
     # I set the limit to 50 so your first test finishes in ~10 seconds.
     # Once you confirm it works, change limit to 500 to evaluate the whole corpus!
-    hyperparameter_tuning(DATASET_FILE, thresholds, limit=250)
+    hyperparameter_tuning(DATASET_FILE, thresholds, limit=50)

@@ -69,8 +69,8 @@ async fn verify_claim(
             .try_extract_tensor::<f32>()
             .expect("Failed to extract float tensor from ONNX output");
 
-        // Because the tensor is flattened, the first token's 768 dimensions are simply the first 768 numbers in the array. Return them.
-        tensor_data[0..768].to_vec()
+        // Because the tensor is flattened, the first token's 384 dimensions are simply the first 384 numbers in the array. Return them.
+        tensor_data[0..384].to_vec()
     };
 
     // Extract the dynamic threshold from the request (default to 0.80)
@@ -189,7 +189,7 @@ async fn verify_claim(
             let support_prob = softmax_probs[1];
             let _neutral_prob = softmax_probs[2];
 
-            /*println!("Chunk: {}, \nrefute_prob: {:.4}, support_prob: {:.4}, _neutral_prob: {:.4}\n", clean_chunk, refute_prob, support_prob, _neutral_prob);*/
+            println!("Chunk: {}, \nrefute_prob: {:.4}, support_prob: {:.4}, _neutral_prob: {:.4}\n", clean_chunk, refute_prob, support_prob, _neutral_prob);
 
             // Calculate how "opinionated" this chunk is (highest non-neutral signal)
             let chunk_signal = refute_prob.max(support_prob);
@@ -259,8 +259,8 @@ async fn verify_claim(
         aggregate_confidence = evidence_list.iter().map(|e| e.confidence).fold(0.0, f32::max);
     }
 
-    /*println!("\nNumber of strongly supporting documents: {} (Support Confidence: {:.2}%)", support_count, avg_support * 100.0);
-    println!("Number of strongly refuting documents: {} (Refute Confidence: {:.2}%)", refute_count, avg_refute * 100.0);*/
+    println!("\nNumber of strongly supporting documents: {} (Support Confidence: {:.2}%)", support_count, avg_support * 100.0);
+    println!("Number of strongly refuting documents: {} (Refute Confidence: {:.2}%)", refute_count, avg_refute * 100.0);
 
     let response = VerifyResponse {
         final_verdict,
@@ -303,8 +303,8 @@ async fn main() -> std::io::Result<()> {
         // 4. Wrap client in Actix web::Data for thread-safe sharing
         let app_state = web::Data::new(AppState {
             qdrant_client: client.clone(),
-            specter_model: Mutex::new(Session::builder().unwrap().commit_from_file("models/specter2/model.onnx").expect("Failed to load Specter model")),
-            specter_tokenizer: Tokenizer::from_file("models/specter2/tokenizer.json").expect("Failed to load Specter tokenizer"),
+            specter_model: Mutex::new(Session::builder().unwrap().commit_from_file("models/bge_small/model.onnx").expect("Failed to load bge_small model")),
+            specter_tokenizer: Tokenizer::from_file("models/bge_small/tokenizer.json").expect("Failed to load bge_small tokenizer"),
             deberta_model: Mutex::new(Session::builder().unwrap().commit_from_file("models/deberta/model.onnx").expect("Failed to load DeBERTa model")),
             deberta_tokenizer: Tokenizer::from_file("models/deberta/tokenizer.json").expect("Failed to load DeBERTa tokenizer"),
         });

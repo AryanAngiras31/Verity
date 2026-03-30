@@ -9,7 +9,7 @@ from sentence_transformers import SentenceTransformer
 
 QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6334))
-MODEL_NAME = "allenai/specter2_base"
+MODEL_NAME = "BAAI/bge-small-en-v1.5"
 COLLECTION_NAME = "verity_hybrid_corpus"
 
 
@@ -25,7 +25,7 @@ def connect_to_qdrant():
         if not qdrant.collection_exists(collection_name):
             qdrant.create_collection(
                 collection_name=collection_name,
-                vectors_config=VectorParams(size=768, distance=Distance.COSINE),
+                vectors_config=VectorParams(size=384, distance=Distance.COSINE),
             )
             print(f"Collection '{collection_name}' created.")
             return qdrant, False
