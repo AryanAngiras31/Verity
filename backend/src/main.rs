@@ -130,9 +130,10 @@ async fn verify_claim(
         println!("Score: {:.4} | Title: {} [{}]", _score, title, source);
         println!("--------------------------------------------------");*/
 
-        // We take the max of the confidences from each sentence to represent the document's overall support/refute/neutral score
-        let mut doc_max_support: f32 = 0.0;
-        let mut doc_max_refute: f32 = 0.0;
+        // We take the max pooling for the chunks to get the strongest signal from each document
+        let mut best_support: f32 = 0.0;
+        let mut best_refute: f32 = 0.0;
+        let mut max_signal: f32 = 0.0;
 
         let sentences: Vec<String> = abstract_text
             .split('.')
@@ -190,27 +191,33 @@ async fn verify_claim(
 
             /*println!("Chunk: {}, \nrefute_prob: {:.4}, support_prob: {:.4}, _neutral_prob: {:.4}\n", clean_chunk, refute_prob, support_prob, _neutral_prob);*/
 
-            // Track the highest scores found across ALL sentences in this document
-            doc_max_refute = doc_max_refute.max(refute_prob);
-            doc_max_support = doc_max_support.max(support_prob);
+            // Calculate how "opinionated" this chunk is (highest non-neutral signal)
+            let chunk_signal = refute_prob.max(support_prob);
+
+            // If this chunk has a stronger opinion than previous chunks, it becomes the representative for the entire document.
+            if chunk_signal > max_signal {
+                max_signal = chunk_signal;
+                best_support = support_prob;
+                best_refute = refute_prob;
+            }
         }
 
-        /*println!("title: {}, doc_max_support: {}, doc_max_refute: {}", title, doc_max_support, doc_max_refute);*/
+        /*println!("title: {}, best_support: {}, best_refute: {}", title, best_support, best_refute);*/
 
         // Calculate the stance and confidence of the evidence document
         let stance;
         let confidence;
 
-        if doc_max_support > doc_max_refute && doc_max_support > 0.50 {
+        if best_support > best_refute && best_support > 0.50 {
             stance = "SUPPORT".to_string();
-            confidence = doc_max_support;
-        } else if doc_max_refute > doc_max_support && doc_max_refute > 0.50 {
+            confidence = best_support;
+        } else if best_refute > best_support && best_refute > 0.50 {
             stance = "REFUTE".to_string();
-            confidence = doc_max_refute;
+            confidence = best_refute;
         } else {
             // If neither signal was strong enough, it defaults to Neutral
             stance = "NEUTRAL".to_string();
-            confidence = 1.0 - doc_max_support - doc_max_refute; // Rough estimate of neutral weight
+            confidence = 1.0 - best_support - best_refute; // Rough estimate of neutral weight
         }
 
         // Apply Threshold Filtering: Only count highly confident logical stances
@@ -252,8 +259,8 @@ async fn verify_claim(
         aggregate_confidence = evidence_list.iter().map(|e| e.confidence).fold(0.0, f32::max);
     }
 
-    println!("\nNumber of strongly supporting documents: {} (Support Confidence: {:.2}%)", support_count, avg_support * 100.0);
-    println!("Number of strongly refuting documents: {} (Refute Confidence: {:.2}%)", refute_count, avg_refute * 100.0);
+    /*println!("\nNumber of strongly supporting documents: {} (Support Confidence: {:.2}%)", support_count, avg_support * 100.0);
+    println!("Number of strongly refuting documents: {} (Refute Confidence: {:.2}%)", refute_count, avg_refute * 100.0);*/
 
     let response = VerifyResponse {
         final_verdict,

@@ -1,5 +1,7 @@
+import tempfile
 from pathlib import Path
 
+from adapters import AutoAdapterModel
 from optimum.onnxruntime import (
     ORTModelForFeatureExtraction,
     ORTModelForSequenceClassification,
@@ -14,6 +16,7 @@ def export_to_onnx():
 
     print("\n--- 1. Exporting SPECTER 2 (Bi-Encoder) ---")
     specter_id = "allenai/specter2_base"
+    adapter_id = "allenai/specter2_adhoc_query"
     specter_dir = output_dir / "specter2"
     specter_path = specter_dir / "model.onnx"  # Standard ONNX model filename
 
@@ -22,17 +25,33 @@ def export_to_onnx():
             f"SPECTER 2 ONNX model already exists at {specter_path}. Skipping export."
         )
     else:
-        # ORTModelForFeatureExtraction strips the final classification head,
-        # leaving us with the raw 768-dimensional vector output we need for Qdrant.
-        print(f"Downloading and converting {specter_id}...")
-        specter_model = ORTModelForFeatureExtraction.from_pretrained(
-            specter_id, export=True
-        )
-        specter_tokenizer = AutoTokenizer.from_pretrained(specter_id)
+        print(f"Downloading base model {specter_id}...")
+        # 1. Load the base model using the adapters library
+        model = AutoAdapterModel.from_pretrained(specter_id)
+        tokenizer = AutoTokenizer.from_pretrained(specter_id)
 
-        specter_model.save_pretrained(specter_dir)
-        specter_tokenizer.save_pretrained(specter_dir)
-        print(f"SPECTER 2 successfully saved to {specter_dir}\n")
+        # 2. Load and activate the ad-hoc query adapter
+        print(f"Loading adapter {adapter_id}...")
+        model.load_adapter(adapter_id, set_active=True)
+
+        # 3. FUSE the adapter weights into the base model permanently
+        print("Merging adapter weights into base model...")
+        model.merge_adapter(adapter_id)
+
+        # 4. Save the merged PyTorch model temporarily so Optimum can export it
+        print("Exporting fused model to ONNX...")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model.save_pretrained(temp_dir)
+            tokenizer.save_pretrained(temp_dir)
+
+            # 5. Load the merged model using Optimum for ONNX export
+            ort_model = ORTModelForFeatureExtraction.from_pretrained(
+                temp_dir, export=True
+            )
+            ort_model.save_pretrained(specter_dir)
+            tokenizer.save_pretrained(specter_dir)
+
+        print(f"SPECTER 2 (Ad-Hoc Query) successfully saved to {specter_dir}\n")
 
     print("\n--- 2. Exporting DeBERTa-v3 (Cross-Encoder) ---")
     deberta_id = "cross-encoder/nli-deberta-v3-small"
