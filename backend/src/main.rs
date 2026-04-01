@@ -31,8 +31,9 @@ async fn verify_claim(
 ) -> impl Responder {
     let claim: &str = &req_body.claim;
 
+    println!("======================================================");
     println!("\nReceived claim: {}", claim);
-    println!("--------------------------------------------------");
+    println!("======================================================");
 
     // --- NEW FIX: BGE-Small strictly requires this exact prefix for search queries! ---
     let bge_query = format!("Represent this sentence for searching relevant passages: {}", claim);
@@ -128,7 +129,6 @@ async fn verify_claim(
 
         let _score = hit.score;
 
-        println!("--------------------------------------------------");
         println!("Score: {:.4} | Title: {} [{}]", _score, title, source);
         println!("--------------------------------------------------");
 
@@ -219,7 +219,7 @@ async fn verify_claim(
         } else {
             // If neither signal was strong enough, it defaults to Neutral
             stance = "NEUTRAL".to_string();
-            confidence = 1.0 - best_support - best_refute; // Rough estimate of neutral weight
+            confidence = 1.0 - best_support - best_refute;
         }
 
         // Apply Threshold Filtering: Only count highly confident logical stances
@@ -250,10 +250,10 @@ async fn verify_claim(
     let mut aggregate_confidence = 0.0;
 
     // The mathematically sound verdict: Whichever average probability is strictly the highest wins.
-    if valid_support_sum > valid_refute_sum {
+    if avg_support > avg_refute {
         final_verdict = "TRUE".to_string();
         aggregate_confidence = avg_support;
-    } else if valid_refute_sum > valid_support_sum {
+    } else if avg_refute > avg_support {
         final_verdict = "FALSE".to_string();
         aggregate_confidence = avg_refute;
     } else if evidence_list.iter().any(|e| e.stance == "NEUTRAL") {
