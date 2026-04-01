@@ -210,10 +210,10 @@ async fn verify_claim(
         let stance;
         let confidence;
 
-        if best_support > best_refute && best_support > 0.50 {
+        if best_support > best_refute && best_support > 0.75 {
             stance = "SUPPORT".to_string();
             confidence = best_support;
-        } else if best_refute > best_support && best_refute > 0.50 {
+        } else if best_refute > best_support && best_refute > 0.75 {
             stance = "REFUTE".to_string();
             confidence = best_refute;
         } else {
@@ -223,10 +223,10 @@ async fn verify_claim(
         }
 
         // Apply Threshold Filtering: Only count highly confident logical stances
-        if stance == "SUPPORT" && confidence > 0.55 {
+        if stance == "SUPPORT" && confidence > 0.75 {
             valid_support_sum += confidence;
             support_count += 1.0;
-        } else if stance == "REFUTE" && confidence > 0.55 {
+        } else if stance == "REFUTE" && confidence > 0.75 {
             valid_refute_sum += confidence;
             refute_count += 1.0;
         }
