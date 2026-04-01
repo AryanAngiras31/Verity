@@ -76,7 +76,7 @@ async fn verify_claim(
     };
 
     // Extract the dynamic threshold from the request (default to 0.80)
-    let threshold: f32 = req_body.qdrant_threshold.unwrap_or(0.80);
+    let threshold: f32 = req_body.qdrant_threshold.unwrap_or(0.75);
     // Query Qdrant for top 5 matches
     let query_request = QueryPointsBuilder::new(COLLECTION_NAME)
         .query(embedding)
@@ -128,9 +128,9 @@ async fn verify_claim(
 
         let _score = hit.score;
 
-        /*println!("--------------------------------------------------");
+        println!("--------------------------------------------------");
         println!("Score: {:.4} | Title: {} [{}]", _score, title, source);
-        println!("--------------------------------------------------");*/
+        println!("--------------------------------------------------");
 
         // We take the max pooling for the chunks to get the strongest signal from each document
         let mut best_support: f32 = 0.0;
@@ -204,7 +204,7 @@ async fn verify_claim(
             }
         }
 
-        /*println!("title: {}, best_support: {}, best_refute: {}", title, best_support, best_refute);*/
+        println!("title: {}, best_support: {}, best_refute: {}", title, best_support, best_refute);
 
         // Calculate the stance and confidence of the evidence document
         let stance;
