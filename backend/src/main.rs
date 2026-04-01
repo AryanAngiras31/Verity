@@ -138,7 +138,7 @@ async fn verify_claim(
         let mut max_signal: f32 = 0.0;
 
         let sentences: Vec<String> = abstract_text
-            .split('.')
+            .split(". ")
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
             .map(|s| format!("{}.", s))
