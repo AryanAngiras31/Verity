@@ -156,7 +156,9 @@ async fn verify_claim(
                 chunks.push(window.join(" "));
             }
         }
-
+        let mut doc_support_sum: f32 = 0.0;
+        let mut doc_refute_sum: f32 = 0.0;
+        let mut doc_max_confidence: f32 = 0.0;
         for clean_chunk in chunks {
             // Tokenize the claim and abstract text. The DeBERTa tokenizer automatically inserts the [SEP] token between them.
             // DeBERTa is trained to read Text A (The Premise) and decide if it supports or refutes Text B (The Hypothesis).
@@ -193,40 +195,32 @@ async fn verify_claim(
 
             println!("Chunk: {}, \nrefute_prob: {:.4}, support_prob: {:.4}, _neutral_prob: {:.4}\n", clean_chunk, refute_prob, support_prob, _neutral_prob);
 
-            // Calculate how "opinionated" this chunk is (highest non-neutral signal)
-            let chunk_signal = refute_prob.max(support_prob);
-
-            // If this chunk has a stronger opinion than previous chunks, it becomes the representative for the entire document.
-            if chunk_signal > max_signal {
-                max_signal = chunk_signal;
-                best_support = support_prob;
-                best_refute = refute_prob;
-            }
+            doc_support_sum += support_prob.powf(2.0);
+            doc_refute_sum += refute_prob.powf(2.0);
+            let chunk_max = refute_prob.max(support_prob);
+            doc_max_confidence = doc_max_confidence.max(chunk_max);
         }
 
-        println!("title: {}, best_support: {}, best_refute: {}", title, best_support, best_refute);
+        // println!("title: {}, best_support: {}, best_refute: {}", title, best_support, best_refute);
 
         // Calculate the stance and confidence of the evidence document
         let stance;
-        let confidence;
+        let confidence = doc_max_confidence;
 
-        if best_support > best_refute && best_support > 0.75 {
+        if doc_support_sum > doc_refute_sum && confidence > 0.50 {
             stance = "SUPPORT".to_string();
-            confidence = best_support;
-        } else if best_refute > best_support && best_refute > 0.75 {
+        } else if doc_refute_sum > doc_support_sum && confidence > 0.50 {
             stance = "REFUTE".to_string();
-            confidence = best_refute;
         } else {
             // If neither signal was strong enough, it defaults to Neutral
             stance = "NEUTRAL".to_string();
-            confidence = 1.0 - best_support - best_refute;
         }
 
         // Apply Threshold Filtering: Only count highly confident logical stances
-        if stance == "SUPPORT" && confidence > 0.75 {
-            valid_support_sum += confidence;
+        if stance == "SUPPORT" && confidence > 0.55 {
+            valid_support_sum += confidence; // Add the actual peak confidence to the final pool
             support_count += 1.0;
-        } else if stance == "REFUTE" && confidence > 0.75 {
+        } else if stance == "REFUTE" && confidence > 0.55 {
             valid_refute_sum += confidence;
             refute_count += 1.0;
         }
