@@ -28,27 +28,27 @@ def export_to_onnx():
         bge_tokenizer.save_pretrained(bge_dir)
         print(f"BGE-Small successfully saved to {bge_dir}\n")
 
-    print("\n--- 2. Exporting DeBERTa-v3 (Cross-Encoder) ---")
-    deberta_id = "cross-encoder/nli-deberta-v3-small"
-    deberta_dir = output_dir / "deberta"
-    deberta_path = deberta_dir / "model.onnx"  # Standard ONNX model filename
+    print("\n--- 2. Exporting PubMedBERT (Cross-Encoder) ---")
+    # --- SWAPPED TO PUBMEDBERT HERE ---
+    pubmed_id = "pritamdeka/PubMedBERT-MNLI-MedNLI"
+    pubmed_dir = output_dir / "pubmedbert"
+    pubmed_path = pubmed_dir / "model.onnx"
 
-    if deberta_path.exists():
+    if pubmed_path.exists():
         print(
-            f"DeBERTa-v3 ONNX model already exists at {deberta_path}. Skipping export."
+            f"PubMedBERT ONNX model already exists at {pubmed_path}. Skipping export."
         )
     else:
-        # ORTModelForSequenceClassification keeps the classification head,
-        # giving us the Support, Refute, and Neutral logits we need for our verdict.
-        print(f"Downloading and converting {deberta_id}...")
-        deberta_model = ORTModelForSequenceClassification.from_pretrained(
-            deberta_id, export=True
+        print(f"Downloading and converting {pubmed_id}...")
+        # ORTModelForSequenceClassification keeps the classification head
+        pubmed_model = ORTModelForSequenceClassification.from_pretrained(
+            pubmed_id, export=True
         )
-        deberta_tokenizer = AutoTokenizer.from_pretrained(deberta_id)
+        pubmed_tokenizer = AutoTokenizer.from_pretrained(pubmed_id)
 
-        deberta_model.save_pretrained(deberta_dir)
-        deberta_tokenizer.save_pretrained(deberta_dir)
-        print(f"DeBERTa-v3 successfully saved to {deberta_dir}\n")
+        pubmed_model.save_pretrained(pubmed_dir)
+        pubmed_tokenizer.save_pretrained(pubmed_dir)
+        print(f"PubMedBERT successfully saved to {pubmed_dir}\n")
 
 
 if __name__ == "__main__":

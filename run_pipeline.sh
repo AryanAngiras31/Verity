@@ -9,8 +9,7 @@ echo "=== Phase 2: Embedding and Upserting to Qdrant ==="
 # Uses the SPECTER 2 model to embed the consolidated corpus and upserts it to Qdrant
 python embed_and_upsert.py
 
-echo "=== Phase 3: Exporting SPECTER 2 and DeBERTa to ONNX ==="
-# Exports the SPECTER 2 and DeBERTa models to ONNX format for deployment
+echo "=== Phase 3: Exporting the Bi-Encoder and Cross-Encoder to ONNX ==="
 python export_models.py
 
 echo "=== Pipeline Execution Complete! ==="

@@ -166,16 +166,17 @@ async fn verify_claim(
                 .encode((clean_chunk.as_str(), claim), true)
                 .expect("Failed to tokenize chunk and claim");
 
-            // DeBERTa does not require token_type_ids, so we do not include it in the inputs.
             let input_ids: Vec<i64> = encoding.get_ids().iter().map(|&x| x as i64).collect();
             let attention_mask: Vec<i64> = encoding.get_attention_mask().iter().map(|&x| x as i64).collect();
+            let token_type_ids: Vec<i64> = encoding.get_type_ids().iter().map(|&x| x as i64).collect();
 
             let shape = vec![1, input_ids.len() as i64];
 
             let outputs = deberta.run(ort::inputs![
                 "input_ids" => Tensor::from_array((shape.clone(), input_ids)).unwrap(),
                 "attention_mask" => Tensor::from_array((shape.clone(), attention_mask)).unwrap(),
-            ]).expect("DeBERTa inference failed");
+                "token_type_ids" => Tensor::from_array((shape.clone(), token_type_ids)).unwrap(),
+            ]).expect("Cross-Encoder inference failed");
 
             // DeBERTa's SequenceClassification exports the final layer as "logits"
             let (_shape, logits_data) = outputs["logits"].try_extract_tensor::<f32>().unwrap();
@@ -243,7 +244,6 @@ async fn verify_claim(
     let mut final_verdict = "NEUTRAL".to_string();
     let mut aggregate_confidence = 0.0;
 
-    // The mathematically sound verdict: Whichever average probability is strictly the highest wins.
     if avg_support > avg_refute {
         final_verdict = "TRUE".to_string();
         aggregate_confidence = avg_support;
@@ -301,8 +301,8 @@ async fn main() -> std::io::Result<()> {
             qdrant_client: client.clone(),
             specter_model: Mutex::new(Session::builder().unwrap().commit_from_file("models/bge_small/model.onnx").expect("Failed to load bge_small model")),
             specter_tokenizer: Tokenizer::from_file("models/bge_small/tokenizer.json").expect("Failed to load bge_small tokenizer"),
-            deberta_model: Mutex::new(Session::builder().unwrap().commit_from_file("models/deberta/model.onnx").expect("Failed to load DeBERTa model")),
-            deberta_tokenizer: Tokenizer::from_file("models/deberta/tokenizer.json").expect("Failed to load DeBERTa tokenizer"),
+            deberta_model: Mutex::new(Session::builder().unwrap().commit_from_file("models/pubmedbert/model.onnx").expect("Failed to load DeBERTa model")),
+            deberta_tokenizer: Tokenizer::from_file("models/pubmedbert/tokenizer.json").expect("Failed to load DeBERTa tokenizer"),
         });
 
         App::new()
