@@ -16,10 +16,10 @@ use tokenizers::Tokenizer;
 // This struct holds our shared application state
 struct AppState {
     qdrant_client: Qdrant,
-    specter_model: Mutex<Session>,
-    specter_tokenizer: Tokenizer,
-    deberta_model: Mutex<Session>,
-    deberta_tokenizer: Tokenizer,
+    bi_encoder_model: Mutex<Session>,
+    bi_encoder_tokenizer: Tokenizer,
+    cross_encoder_model: Mutex<Session>,
+    cross_encoder_tokenizer: Tokenizer,
 }
 
 const COLLECTION_NAME: &str = "verity_hybrid_corpus";
@@ -36,9 +36,9 @@ async fn verify_claim(
     println!("======================================================");
 
     // --- NEW FIX: BGE-Small strictly requires this exact prefix for search queries! ---
-    let bge_query = format!("Represent this sentence for searching relevant passages: {}", claim);
+    let bi_encoder_query = format!("Represent this sentence for searching relevant passages: {}", claim);
     // Embed the claim using the BGE Small model
-    let encoding = data.specter_tokenizer.encode(bge_query, true).expect("Failed to encode claim using BGE");
+    let encoding = data.bi_encoder_tokenizer.encode(bi_encoder_query, true).expect("Failed to encode claim using the Bi-Encoder tokenizer");
 
     // BGE Small is build on a BERT style architecture and requires these three inputs
     // ONNX expects 64 bit integers for input ids and masks
@@ -54,20 +54,20 @@ async fn verify_claim(
     let seq_len: usize = input_ids.len();   // This is the number of tokens in the sequence
     let shape = vec![batch_size, seq_len];  // Pass a standard Rust Tuple (Shape, Data) directly to ONNX.
 
-    // Use a scoping block to automatically drop the pointer from output to specter and the Mutex lock after the embedding is extracted
+    // Use a scoping block to automatically drop the pointer from output to the Bi-Encoder and the Mutex lock after the embedding is extracted
     let embedding: Vec<f32> = {
         // Get the Mutex lock to get safe, mutable access to the model
-        let mut specter = data.specter_model.lock().expect("Could not get Mutex lock for SPECTER 2 model");
+        let mut bi_encoder = data.bi_encoder_model.lock().expect("Could not get Mutex lock for the Bi-Encoder model");
 
-        // Run the SPECTER 2 model
-        let outputs = specter.run(ort::inputs![
+        // Run the BGE small model
+        let outputs = bi_encoder.run(ort::inputs![
             "input_ids" => Tensor::from_array((shape.clone(), input_ids)).unwrap(),
             "attention_mask" => Tensor::from_array((shape.clone(), attention_mask)).unwrap(),
             "token_type_ids" => Tensor::from_array((shape.clone(), token_type_ids)).unwrap(),
-        ]).expect("Failed to run SPECTER 2 model");
+        ]).expect("Failed to run the Bi-Encoder model");
 
         // Extract the embedding
-        // SPECTER uses the [CLS] token (the very first token at index 0) as the embedding for the whole sentence.
+        // BGE-Small uses the [CLS] token (the very first token at index 0) as the embedding for the whole sentence.
         let (_shape, tensor_data) = outputs["last_hidden_state"]    // The output is a tensor of shape [batch_size, sequence_length, hidden_dimension]
             .try_extract_tensor::<f32>()
             .expect("Failed to extract float tensor from ONNX output");
@@ -98,11 +98,11 @@ async fn verify_claim(
         }
     };
 
-    // DeBERTa Cross Encoder Inference
+    // Cross Encoder Inference
     let mut evidence_list: Vec<Evidence> = Vec::new();
 
-    // Get the Mutex lock for the DeBERTa model
-    let mut deberta = data.deberta_model.lock().expect("Could not get Mutex lock for DeBERTa model");
+    // Get the Mutex lock for the Cross Encoder model
+    let mut cross_encoder = data.cross_encoder_model.lock().expect("Could not get Mutex lock for the Cross Encoder model");
 
     // TRACKERS FOR THRESHOLDED MEAN POOLING
     let mut valid_support_sum = 0.0;
@@ -160,9 +160,9 @@ async fn verify_claim(
         let mut doc_refute_sum: f32 = 0.0;
         let mut doc_max_confidence: f32 = 0.0;
         for clean_chunk in chunks {
-            // Tokenize the claim and abstract text. The DeBERTa tokenizer automatically inserts the [SEP] token between them.
-            // DeBERTa is trained to read Text A (The Premise) and decide if it supports or refutes Text B (The Hypothesis).
-            let encoding = data.deberta_tokenizer
+            // Tokenize the claim and abstract text. The PubMedBERT tokenizer automatically inserts the [SEP] token between them.
+            // The Cross Encoder is trained to read Text A (The Premise) and decide if it supports or refutes Text B (The Hypothesis).
+            let encoding = data.cross_encoder_tokenizer
                 .encode((clean_chunk.as_str(), claim), true)
                 .expect("Failed to tokenize chunk and claim");
 
@@ -172,13 +172,13 @@ async fn verify_claim(
 
             let shape = vec![1, input_ids.len() as i64];
 
-            let outputs = deberta.run(ort::inputs![
+            let outputs = cross_encoder.run(ort::inputs![
                 "input_ids" => Tensor::from_array((shape.clone(), input_ids)).unwrap(),
                 "attention_mask" => Tensor::from_array((shape.clone(), attention_mask)).unwrap(),
                 "token_type_ids" => Tensor::from_array((shape.clone(), token_type_ids)).unwrap(),
             ]).expect("Cross-Encoder inference failed");
 
-            // DeBERTa's SequenceClassification exports the final layer as "logits"
+            // PubMedBERT's SequenceClassification exports the final layer as "logits"
             let (_shape, logits_data) = outputs["logits"].try_extract_tensor::<f32>().unwrap();
             let logits = &logits_data[0..3];
 
@@ -188,7 +188,7 @@ async fn verify_claim(
             let sum_logits: f32 = exp_logits.iter().sum();
             let softmax_probs: Vec<f32> = exp_logits.iter().map(|&x| x / sum_logits).collect();
 
-            // HuggingFace DeBERTa-v3-small NLI Mapping:
+            // HuggingFace PubMedBERT's NLI Mapping:
             // 0 -> Contradiction (Refute), 1 -> Entailment (Support), 2 -> Neutral
             let refute_prob = softmax_probs[0];
             let support_prob = softmax_probs[1];
@@ -235,7 +235,7 @@ async fn verify_claim(
         });
     }
 
-    drop(deberta);
+    drop(cross_encoder);
 
     // Verdict aggregation (Thresholded Mean Pooling)
     let avg_support = if support_count > 0.0 { valid_support_sum / support_count } else { 0.0 };
@@ -299,10 +299,10 @@ async fn main() -> std::io::Result<()> {
         // 4. Wrap client in Actix web::Data for thread-safe sharing
         let app_state = web::Data::new(AppState {
             qdrant_client: client.clone(),
-            specter_model: Mutex::new(Session::builder().unwrap().commit_from_file("models/bge_small/model.onnx").expect("Failed to load bge_small model")),
-            specter_tokenizer: Tokenizer::from_file("models/bge_small/tokenizer.json").expect("Failed to load bge_small tokenizer"),
-            deberta_model: Mutex::new(Session::builder().unwrap().commit_from_file("models/pubmedbert/model.onnx").expect("Failed to load DeBERTa model")),
-            deberta_tokenizer: Tokenizer::from_file("models/pubmedbert/tokenizer.json").expect("Failed to load DeBERTa tokenizer"),
+            bi_encoder_model: Mutex::new(Session::builder().unwrap().commit_from_file("models/bge_small/model.onnx").expect("Failed to load BGE-Small model")),
+            bi_encoder_tokenizer: Tokenizer::from_file("models/bge_small/tokenizer.json").expect("Failed to load BGE-Small tokenizer"),
+            cross_encoder_model: Mutex::new(Session::builder().unwrap().commit_from_file("models/pubmedbert/model.onnx").expect("Failed to load the PubMedBERT model")),
+            cross_encoder_tokenizer: Tokenizer::from_file("models/pubmedbert/tokenizer.json").expect("Failed to load the PubMedBERT tokenizer"),
         });
 
         App::new()
