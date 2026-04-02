@@ -31,9 +31,9 @@ async fn verify_claim(
 ) -> impl Responder {
     let claim: &str = &req_body.claim;
 
-    println!("======================================================");
+    println!("============================================================================================================");
     println!("Received claim: {}", claim);
-    println!("======================================================");
+    println!("============================================================================================================\n");
 
     // --- NEW FIX: BGE-Small strictly requires this exact prefix for search queries! ---
     let bi_encoder_query = format!("Represent this sentence for searching relevant passages: {}", claim);
@@ -129,8 +129,9 @@ async fn verify_claim(
 
         let _score = hit.score;
 
+        println!("----------------------------------------------------------------------------------------------------");
         println!("Score: {:.4} | Title: {} [{}]", _score, title, source);
-        println!("--------------------------------------------------");
+        println!("----------------------------------------------------------------------------------------------------\n");
 
         // We take the max pooling for the chunks to get the strongest signal from each document
         let mut best_support: f32 = 0.0;
@@ -156,9 +157,7 @@ async fn verify_claim(
                 chunks.push(window.join(" "));
             }
         }
-        let mut doc_support_sum: f32 = 0.0;
-        let mut doc_refute_sum: f32 = 0.0;
-        let mut doc_max_confidence: f32 = 0.0;
+
         for clean_chunk in chunks {
             // Tokenize the claim and abstract text. The PubMedBERT tokenizer automatically inserts the [SEP] token between them.
             // The Cross Encoder is trained to read Text A (The Premise) and decide if it supports or refutes Text B (The Hypothesis).
@@ -206,7 +205,9 @@ async fn verify_claim(
             }
         }
 
-         println!("title: {}, doc_support_sum: {}, doc_refute_sum: {}", title, doc_support_sum, doc_refute_sum);
+         println!("----------------------------------------------------------------------------------------------------");
+         println!("title: {}, best_support: {}, best_refute: {}", title, best_support, best_refute);
+         println!("----------------------------------------------------------------------------------------------------");
 
         // Calculate the stance and confidence of the evidence document
         let stance;
@@ -225,10 +226,10 @@ async fn verify_claim(
         }
 
         // Apply Threshold Filtering: Only count highly confident logical stances
-        if stance == "SUPPORT" && confidence > 0.55 {
+        if stance == "SUPPORT" && confidence > 0.80 {
             valid_support_sum += confidence; // Add the actual peak confidence to the final pool
             support_count += 1.0;
-        } else if stance == "REFUTE" && confidence > 0.55 {
+        } else if stance == "REFUTE" && confidence > 0.80 {
             valid_refute_sum += confidence;
             refute_count += 1.0;
         }
