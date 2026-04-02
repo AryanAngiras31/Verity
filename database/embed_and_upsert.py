@@ -38,10 +38,10 @@ def connect_to_qdrant():
         return None, False
 
 
-# Loads the SPECTER 2 model.
+# Loads the BGE-Small model.
 def get_model():
     try:
-        print("Loading SPECTER 2 model...")
+        print("Loading BGE-Small model...")
         # We use the base model which is highly optimized for semantic search
         model = SentenceTransformer(MODEL_NAME)
         return model
@@ -62,7 +62,7 @@ def embed_and_upsert(qdrant, model, filename, batchsize=500):
             joined_abstract = " ".join(doc["abstract"])
 
             # 2. Format the joined abstract for embedding
-            # Format for SPECTER 2: Title + [SEP] + Abstract
+            # Format for BGE-Small: Title + [SEP] + Abstract
             formatted_abstract = (
                 doc["title"] + model.tokenizer.sep_token + joined_abstract
             )

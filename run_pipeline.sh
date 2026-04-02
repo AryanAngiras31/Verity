@@ -6,7 +6,7 @@ echo "=== Phase 1: Downloading and Consolidating Datasets ==="
 python create_hybrid_dataset.py
 
 echo "=== Phase 2: Embedding and Upserting to Qdrant ==="
-# Uses the SPECTER 2 model to embed the consolidated corpus and upserts it to Qdrant
+# Uses the BGE-Small model to embed the consolidated corpus and upserts it to Qdrant
 python embed_and_upsert.py
 
 echo "=== Phase 3: Exporting the Bi-Encoder and Cross-Encoder to ONNX ==="

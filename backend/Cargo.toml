@@ -18,7 +18,7 @@ serde_json = "1.0"
 qdrant-client = "1.7.0"
 tonic = "0.10"          # Required underlying gRPC library for Qdrant
 
-# ONNX Runtime (for SPECTER 2 and DeBERTa)
+# ONNX Runtime (for the bi-encoder and cross-encoder models)
 ort = "2.0.0-rc.12"
 
 # Hugging Face tokenizers (to convert strings into token IDs)
