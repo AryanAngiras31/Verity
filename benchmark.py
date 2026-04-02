@@ -31,12 +31,16 @@ def test_claim_against_api(claim, threshold):
     """Fires a single claim to the Rust backend."""
     payload = {"claim": claim, "qdrant_threshold": threshold}
     try:
-        res = requests.post(API_URL, json=payload, timeout=5)
+        res = requests.post(API_URL, json=payload, timeout=30)
         if res.status_code == 200:
             return res.json().get("final_verdict", "ERROR")
         return "ERROR"
+    except requests.exceptions.Timeout:
+        print("\n[Warning] Request timed out!")
+        return "TIMEOUT"
     except Exception as e:
-        return e
+        print(f"\n[Error] {e}")
+        return "CONNECTION_FAILED"
 
 
 def run_benchmark(dataset_path, threshold, limit=50):
