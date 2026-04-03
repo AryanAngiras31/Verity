@@ -226,11 +226,12 @@ async fn verify_claim(
         }
 
         // Apply Threshold Filtering: Only count highly confident logical stances
+        let weighted_confidence = confidence * _score;
         if stance == "SUPPORT" && confidence > 0.80 {
-            valid_support_sum += confidence; // Add the actual peak confidence to the final pool
+            valid_support_sum += weighted_confidence; // Add the actual peak confidence to the final pool
             support_count += 1.0;
         } else if stance == "REFUTE" && confidence > 0.80 {
-            valid_refute_sum += confidence;
+            valid_refute_sum += weighted_confidence;
             refute_count += 1.0;
         }
 
