@@ -31,7 +31,7 @@ def test_claim_against_api(claim, threshold):
     """Fires a single claim to the Rust backend."""
     payload = {"claim": claim, "qdrant_threshold": threshold}
     try:
-        res = requests.post(API_URL, json=payload, timeout=60)
+        res = requests.post(API_URL, json=payload, timeout=30)
         if res.status_code == 200:
             return res.json().get("final_verdict", "ERROR")
         return "ERROR"
@@ -148,5 +148,9 @@ def hyperparameter_tuning(dataset_path, thresholds_to_test, limit=50):
 
 if __name__ == "__main__":
     DATASET_FILE = "data/hybrid_claims_consolidated.jsonl"
-    thresholds = [0.50, 0.60, 0.65, 0.70, 0.75]
-    hyperparameter_tuning(DATASET_FILE, thresholds, limit=250)
+    # We will test 5 different strictness levels for the Qdrant Bouncer
+    thresholds = [0.60, 0.65, 0.70, 0.75]
+
+    # I set the limit to 50 so your first test finishes in ~10 seconds.
+    # Once you confirm it works, change limit to 500 to evaluate the whole corpus!
+    hyperparameter_tuning(DATASET_FILE, thresholds, limit=50)
