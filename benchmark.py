@@ -1,4 +1,5 @@
 # docker run --rm -it --network host -v "$(pwd):/app" -w /app python:3.10-slim bash -c "pip install requests && API_URL=http://localhost:8080/api/verify python benchmark.py"
+import concurrent.futures
 import json
 import os
 import time
@@ -23,7 +24,6 @@ def parse_ground_truth(label):
         "NEUTRAL": "NEUTRAL",
         "": "NEUTRAL",
     }
-
     return label_map.get(label, "NEUTRAL")
 
 
@@ -43,8 +43,8 @@ def test_claim_against_api(claim, threshold):
         return "CONNECTION_FAILED"
 
 
-def run_benchmark(dataset_path, threshold, limit=50):
-    """Evaluates the pipeline against the dataset using a specific threshold."""
+def run_benchmark(dataset_path, threshold, limit=50, max_workers=2):
+    """Evaluates the pipeline against the dataset using a specific threshold in parallel."""
     print(f"\n--- Running Benchmark (Threshold: {threshold:.2f}) ---")
     correct = 0
     total = 0
@@ -52,21 +52,38 @@ def run_benchmark(dataset_path, threshold, limit=50):
     model_label_proportions = label_proportions()
     true_label_proportions = label_proportions()
 
+    # 1. Read the required number of claims into memory first
+    claims_to_test = []
     with open(dataset_path, "r") as f:
         for line in f:
-            if total >= limit:
+            if len(claims_to_test) >= limit:
                 break
+            claims_to_test.append(json.loads(line))
 
-            data = json.loads(line)
-            claim = data["claim"]
+    # 2. Use ThreadPoolExecutor to run requests in parallel
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Dictionary mapping the Future object to the original claim data
+        future_to_data = {
+            executor.submit(test_claim_against_api, data["claim"], threshold): data
+            for data in claims_to_test
+        }
+
+        # 3. Process the results as they finish (in whatever order)
+        for future in concurrent.futures.as_completed(future_to_data):
+            data = future_to_data[future]
             ground_truth = parse_ground_truth(data["label"])
 
-            prediction = test_claim_against_api(claim, threshold)
+            try:
+                prediction = future.result()
+            except Exception as e:
+                prediction = "CONNECTION_FAILED"
 
             if prediction == "CONNECTION_FAILED":
                 print("Could not connect to Rust API. Is it running?")
+                # Return 0 to abort early if the server is completely down
                 return 0
 
+            # Update predictions tracker
             match prediction:
                 case "TRUE":
                     model_label_proportions.support += 1
@@ -74,6 +91,8 @@ def run_benchmark(dataset_path, threshold, limit=50):
                     model_label_proportions.contradict += 1
                 case "NEUTRAL":
                     model_label_proportions.neutral += 1
+
+            # Update ground truth tracker
             match ground_truth:
                 case "TRUE":
                     true_label_proportions.support += 1
@@ -87,7 +106,7 @@ def run_benchmark(dataset_path, threshold, limit=50):
 
             total += 1
             if total % 10 == 0:
-                print(f"  Processed {total}/{limit} claims...")
+                print(f"  Processed {total}/{len(claims_to_test)} claims...")
 
     accuracy = (correct / total) * 100 if total > 0 else 0
     print(f"Pass Complete! Accuracy: {accuracy:.2f}% ({correct}/{total})")
@@ -129,10 +148,5 @@ def hyperparameter_tuning(dataset_path, thresholds_to_test, limit=50):
 
 if __name__ == "__main__":
     DATASET_FILE = "data/hybrid_claims_consolidated.jsonl"
-
-    # We will test 5 different strictness levels for the Qdrant Bouncer
-    thresholds = [0.60, 0.65, 0.70, 0.75]
-
-    # I set the limit to 50 so your first test finishes in ~10 seconds.
-    # Once you confirm it works, change limit to 500 to evaluate the whole corpus!
+    thresholds = [0.50, 0.60, 0.65, 0.70, 0.75]
     hyperparameter_tuning(DATASET_FILE, thresholds, limit=250)
