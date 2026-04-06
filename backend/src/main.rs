@@ -104,39 +104,33 @@ async fn verify_claim(
     // Get the Mutex lock for the Cross Encoder model
     let mut cross_encoder = data.cross_encoder_model.lock().expect("Could not get Mutex lock for the Cross Encoder model");
 
-    // TRACKERS FOR THRESHOLDED MEAN POOLING
-    let mut valid_support_sum = 0.0;
-    let mut valid_refute_sum = 0.0;
-    let mut support_count = 0.0;
-    let mut refute_count = 0.0;
+    // TRACKERS FOR DOCUMENT-LEVEL MAX POOLING
+    let mut final_verdict = "NEUTRAL".to_string();
+    let mut highest_weighted_confidence: f32 = 0.0;
+    let mut raw_confidence_for_verdict: f32 = 0.0;
 
     for hit in response.result.iter() {
         let payload = &hit.payload;
 
-        // Helper to extract strings from the Qdrant Value type safely
         let get_string = |key: &str| {
-            payload.get(key)
-                .and_then(|v| v.as_str())
-                .map(|s| s.as_str())
-                .unwrap_or("Unknown")
+            payload.get(key).and_then(|v| v.as_str()).map(|s| s.as_str()).unwrap_or("Unknown")
         };
 
         let title = get_string("title");
         let source = get_string("dataset_source");
-
-        // Extract the abstract
         let abstract_text = get_string("abstract");
 
+        // WE WILL USE THIS NOW
         let _score = hit.score;
 
         println!("----------------------------------------------------------------------------------------------------");
         println!("Score: {:.4} | Title: {} [{}]", _score, title, source);
         println!("----------------------------------------------------------------------------------------------------\n");
 
-        // We use quadratic mean pooling for the chunks to get the strongest signal from each document
-        let mut support_sum: f32 = 0.0;
-        let mut refute_sum: f32 = 0.0;
-        let mut doc_max_signal: f32 = 0.0;
+        // CHUNK-LEVEL MAX POOLING
+        let mut best_support: f32 = 0.0;
+        let mut best_refute: f32 = 0.0;
+        let mut max_signal: f32 = 0.0;
 
         let sentences: Vec<String> = abstract_text
             .split(". ")
@@ -145,12 +139,10 @@ async fn verify_claim(
             .map(|s| format!("{}.", s))
             .collect();
 
-        // Add overlapping sliding window chunking to preserve context while preventing premise length dilution
         let window_size = 2;
         let mut chunks: Vec<String> = Vec::new();
 
         if sentences.len() <= window_size {
-            // If the abstract is very short, just join the whole thing
             chunks.push(sentences.join(" "));
         } else {
             for window in sentences.windows(window_size) {
@@ -159,8 +151,6 @@ async fn verify_claim(
         }
 
         for clean_chunk in chunks {
-            // Tokenize the claim and abstract text. The PubMedBERT tokenizer automatically inserts the [SEP] token between them.
-            // The Cross Encoder is trained to read Text A (The Premise) and decide if it supports or refutes Text B (The Hypothesis).
             let encoding = data.cross_encoder_tokenizer
                 .encode((clean_chunk.as_str(), claim), true)
                 .expect("Failed to tokenize chunk and claim");
@@ -177,56 +167,51 @@ async fn verify_claim(
                 "token_type_ids" => Tensor::from_array((shape.clone(), token_type_ids)).unwrap(),
             ]).expect("Cross-Encoder inference failed");
 
-            // PubMedBERT's SequenceClassification exports the final layer as "logits"
             let (_shape, logits_data) = outputs["logits"].try_extract_tensor::<f32>().unwrap();
             let logits = &logits_data[0..3];
 
-            // Calculate SoftMax for logits. Maps logits to a range of 0 to 1 making sure they add up to 1.
             let max_logit: f32 = logits[0].max(logits[1].max(logits[2]));
             let exp_logits: Vec<f32> = logits.iter().map(|&x| (x-max_logit).exp()).collect();
             let sum_logits: f32 = exp_logits.iter().sum();
             let softmax_probs: Vec<f32> = exp_logits.iter().map(|&x| x / sum_logits).collect();
 
-            // HuggingFace PubMedBERT's NLI Mapping:
-            // 0 -> Contradiction (Refute), 1 -> Entailment (Support), 2 -> Neutral
             let refute_prob = softmax_probs[0];
             let support_prob = softmax_probs[1];
-            let _neutral_prob = softmax_probs[2];
 
-            println!("Chunk: {}, \nrefute_prob: {:.4}, support_prob: {:.4}, _neutral_prob: {:.4}\n", clean_chunk, refute_prob, support_prob, _neutral_prob);
+            let chunk_signal = refute_prob.max(support_prob);
 
-            // Take sum of squared probabilities
-            support_sum += support_prob.powf(2.0);
-            refute_sum += refute_prob.powf(2.0);
-            // Calculate the maximum signal for this chunk
-            let chunk_max = refute_prob.max(support_prob);
-            doc_max_signal = doc_max_signal.max(chunk_max);
+            // Keep only the highest signal chunk
+            if chunk_signal > max_signal {
+                max_signal = chunk_signal;
+                best_support = support_prob;
+                best_refute = refute_prob;
+            }
         }
 
-        println!("----------------------------------------------------------------------------------------------------");
-        println!("title: {}, support_sum: {:.4}, refute_sum: {:.4}", title, support_sum, refute_sum);
-        println!("----------------------------------------------------------------------------------------------------");
-
-        // Calculate the stance and confidence of the evidence document
         let stance;
-        let confidence = doc_max_signal;
+        let confidence;
 
-        if support_sum > refute_sum && support_sum > 0.50 {
+        if best_support > best_refute && best_support > 0.50 {
             stance = "SUPPORT".to_string();
-        } else if refute_sum > support_sum && refute_sum > 0.50 {
+            confidence = best_support;
+        } else if best_refute > best_support && best_refute > 0.50 {
             stance = "REFUTE".to_string();
+            confidence = best_refute;
         } else {
-            // If neither signal was strong enough, it defaults to Neutral
             stance = "NEUTRAL".to_string();
+            confidence = 1.0 - best_support - best_refute;
         }
 
-        // Apply Threshold Filtering: Only count highly confident logical stances
-        if stance == "SUPPORT" && confidence > 0.75 {
-            valid_support_sum += confidence; // Add the actual peak confidence to the final pool
-            support_count += 1.0;
-        } else if stance == "REFUTE" && confidence > 0.75 {
-            valid_refute_sum += confidence;
-            refute_count += 1.0;
+        // DOCUMENT-LEVEL WEIGHTED MAX POOLING
+        let weighted_confidence = confidence * _score;
+
+        // Apply a strict 0.80 logic threshold so weak hallucinations don't win
+        if stance != "NEUTRAL" && confidence > 0.80 {
+            if weighted_confidence > highest_weighted_confidence {
+                highest_weighted_confidence = weighted_confidence;
+                final_verdict = stance.clone();
+                raw_confidence_for_verdict = confidence; // Keep for the JSON response
+            }
         }
 
         evidence_list.push(types::Evidence {
@@ -240,34 +225,25 @@ async fn verify_claim(
 
     drop(cross_encoder);
 
-    // Verdict aggregation (Thresholded Mean Pooling)
-    let avg_support = if support_count > 0.0 { valid_support_sum / support_count } else { 0.0 };
-    let avg_refute = if refute_count > 0.0 { valid_refute_sum / refute_count } else { 0.0 };
-
-    let mut final_verdict = "NEUTRAL".to_string();
-    let mut aggregate_confidence = 0.0;
-
-    if avg_support > avg_refute {
+    // Map output to match the True/False expectation for your benchmark script
+    if final_verdict == "SUPPORT" {
         final_verdict = "TRUE".to_string();
-        aggregate_confidence = avg_support;
-    } else if avg_refute > avg_support {
+    } else if final_verdict == "REFUTE" {
         final_verdict = "FALSE".to_string();
-        aggregate_confidence = avg_refute;
-    } else if evidence_list.iter().any(|e| e.stance == "NEUTRAL") {
-        // If everything was filtered out, default to the highest Neutral score
-        aggregate_confidence = evidence_list.iter().map(|e| e.confidence).fold(0.0, f32::max);
     }
 
-    println!("\nNumber of strongly supporting documents: {} (Support Confidence: {:.2}%)", support_count, avg_support * 100.0);
-    println!("Number of strongly refuting documents: {} (Refute Confidence: {:.2}%)", refute_count, avg_refute * 100.0);
+    // If all documents were filtered out or neutral, fallback to the highest neutral score
+    let aggregate_confidence = if final_verdict != "NEUTRAL" {
+        raw_confidence_for_verdict
+    } else {
+        evidence_list.iter().map(|e| e.confidence).fold(0.0, f32::max)
+    };
 
     let response = VerifyResponse {
         final_verdict,
         aggregate_confidence,
         evidence: evidence_list,
     };
-
-    println!("Verdict: {} (Confidence: {:.2}%)", response.final_verdict, response.aggregate_confidence * 100.0);
 
     HttpResponse::Ok().json(response)
 }

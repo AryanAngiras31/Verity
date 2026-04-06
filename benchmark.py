@@ -52,7 +52,7 @@ def test_claim_against_api(claim, threshold):
 
 def run_benchmark(dataset_path, threshold, limit=50):
     """Evaluates the pipeline against the dataset using a specific threshold."""
-    print(f"\n--- Running Benchmark (Threshold: {threshold:.2f}) ---")
+    print(f"\n====== Running Benchmark (Threshold: {threshold:.2f}) ======")
     correct = 0
     total = 0
 
@@ -118,10 +118,9 @@ def run_benchmark(dataset_path, threshold, limit=50):
                 print(f"  Processed {total}/{limit} claims...")
 
     # Display results
-    print(f"\nBenchmark Results for Threshold {threshold}:")
+    print(f"\n---- Benchmark Results for Threshold {threshold} ----")
 
     # Calculate Precision, Recall, and F1 for each class
-    print("\n--- Class Breakdown ---")
     f1_scores = {}
     for c in classes:
         precision = TP[c] / (TP[c] + FP[c]) if (TP[c] + FP[c]) > 0 else 0
