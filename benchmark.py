@@ -2,6 +2,7 @@
 import json
 import os
 import time
+from ftplib import FTP_PORT
 
 import requests
 
@@ -17,6 +18,13 @@ class label_proportions:
 
 
 def parse_ground_truth(label):
+    """
+    Parses the ground truth label into a format the API expects.
+    Args:
+        label (str): The ground truth label from the dataset.
+    Returns:
+        str: The parsed label ("TRUE", "FALSE", or "NEUTRAL").
+    """
     label_map = {
         "SUPPORT": "TRUE",
         "CONTRADICT": "FALSE",
@@ -48,11 +56,16 @@ def run_benchmark(dataset_path, threshold, limit=50):
     correct = 0
     total = 0
 
+    # Initialize dictionaries for multi-class F1 tracking
+    classes = ["TRUE", "FALSE", "NEUTRAL"]
+    TP = {c: 0 for c in classes}
+    FP = {c: 0 for c in classes}
+    FN = {c: 0 for c in classes}
+
+    # Initialize label proportions to zero
     model_label_proportions = label_proportions()
     true_label_proportions = label_proportions()
 
-    # 1. Read the required number of claims into memory first
-    claims_to_test = []
     with open(dataset_path, "r") as f:
         for line in f:
             if total >= limit:
@@ -89,8 +102,16 @@ def run_benchmark(dataset_path, threshold, limit=50):
                 case "NEUTRAL":
                     true_label_proportions.neutral += 1
 
+            # Update multi-class confusion metrics
             if prediction == ground_truth:
                 correct += 1
+                if ground_truth in classes:
+                    TP[ground_truth] += 1
+            else:
+                if prediction in classes:
+                    FP[prediction] += 1  # The model guessed this class incorrectly
+                if ground_truth in classes:
+                    FN[ground_truth] += 1  # The model missed the actual class
 
             total += 1
             if total % 10 == 0:
@@ -98,13 +119,33 @@ def run_benchmark(dataset_path, threshold, limit=50):
 
     accuracy = (correct / total) * 100 if total > 0 else 0
     print(f"Pass Complete! Accuracy: {accuracy:.2f}% ({correct}/{total})")
+
+    # Calculate Macro-F1
+    print("\n--- Class Breakdown ---")
+    f1_scores = []
+    for c in classes:
+        precision = TP[c] / (TP[c] + FP[c]) if (TP[c] + FP[c]) > 0 else 0
+        recall = TP[c] / (TP[c] + FN[c]) if (TP[c] + FN[c]) > 0 else 0
+        f1 = (
+            2 * (precision * recall) / (precision + recall)
+            if (precision + recall) > 0
+            else 0
+        )
+        f1_scores.append(f1)
+        print(
+            f"Class '{c}': Precision: {precision:.2f} | Recall: {recall:.2f} | F1: {f1:.2f}"
+        )
+
+    macro_f1 = sum(f1_scores) / len(f1_scores) if f1_scores else 0
+    print(f"\nOVERALL MACRO F1: {macro_f1:.4f}")
+
     print(
         f"Model Label Proportions: Support={model_label_proportions.support / total:.2f}, Contradict={model_label_proportions.contradict / total:.2f}, Neutral={model_label_proportions.neutral / total:.2f}"
     )
     print(
         f"True Label Proportions: Support={true_label_proportions.support / total:.2f}, Contradict={true_label_proportions.contradict / total:.2f}, Neutral={true_label_proportions.neutral / total:.2f}"
     )
-    return accuracy
+    return macro_f1
 
 
 def hyperparameter_tuning(dataset_path, thresholds_to_test, limit=50):
@@ -115,23 +156,23 @@ def hyperparameter_tuning(dataset_path, thresholds_to_test, limit=50):
     results = {}
 
     for t in thresholds_to_test:
-        acc = run_benchmark(dataset_path, threshold=t, limit=limit)
-        results[t] = acc
+        f1 = run_benchmark(dataset_path, threshold=t, limit=limit)
+        results[t] = f1
         time.sleep(1)  # Let the Rust server catch its breath
 
     print("\n=====================================")
     print("HYPERPARAMETER TUNING RESULTS:")
     print("=====================================")
     best_t = None
-    best_acc = -1
+    best_f1 = -1
 
-    for t, acc in results.items():
-        print(f"Threshold {t:.2f} -> {acc:.2f}% Accuracy")
-        if acc > best_acc:
-            best_acc = acc
+    for t, f1 in results.items():
+        print(f"Threshold {t:.2f} -> {f1:.2f} F1 Score")
+        if f1 > best_f1:
+            best_f1 = f1
             best_t = t
 
-    print(f"\nOPTIMAL QDRANT THRESHOLD: {best_t:.2f} ({best_acc:.2f}% Accuracy)")
+    print(f"\nOPTIMAL QDRANT THRESHOLD: {best_t:.2f} ({best_f1:.2f} F1 Score)")
 
 
 if __name__ == "__main__":
