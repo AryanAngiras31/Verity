@@ -1,5 +1,4 @@
 # docker run --rm -it --network host -v "$(pwd):/app" -w /app python:3.10-slim bash -c "pip install requests && API_URL=http://localhost:8080/api/verify python benchmark.py"
-import concurrent.futures
 import json
 import os
 import time
@@ -31,7 +30,7 @@ def test_claim_against_api(claim, threshold):
     """Fires a single claim to the Rust backend."""
     payload = {"claim": claim, "qdrant_threshold": threshold}
     try:
-        res = requests.post(API_URL, json=payload, timeout=30)
+        res = requests.post(API_URL, json=payload, timeout=60)
         if res.status_code == 200:
             return res.json().get("final_verdict", "ERROR")
         return "ERROR"
@@ -43,8 +42,8 @@ def test_claim_against_api(claim, threshold):
         return "CONNECTION_FAILED"
 
 
-def run_benchmark(dataset_path, threshold, limit=50, max_workers=2):
-    """Evaluates the pipeline against the dataset using a specific threshold in parallel."""
+def run_benchmark(dataset_path, threshold, limit=50):
+    """Evaluates the pipeline against the dataset using a specific threshold."""
     print(f"\n--- Running Benchmark (Threshold: {threshold:.2f}) ---")
     correct = 0
     total = 0
@@ -56,25 +55,14 @@ def run_benchmark(dataset_path, threshold, limit=50, max_workers=2):
     claims_to_test = []
     with open(dataset_path, "r") as f:
         for line in f:
-            if len(claims_to_test) >= limit:
+            if total >= limit:
                 break
-            claims_to_test.append(json.loads(line))
-
-    # 2. Use ThreadPoolExecutor to run requests in parallel
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Dictionary mapping the Future object to the original claim data
-        future_to_data = {
-            executor.submit(test_claim_against_api, data["claim"], threshold): data
-            for data in claims_to_test
-        }
-
-        # 3. Process the results as they finish (in whatever order)
-        for future in concurrent.futures.as_completed(future_to_data):
-            data = future_to_data[future]
+            data = json.loads(line)
+            claim = data["claim"]
             ground_truth = parse_ground_truth(data["label"])
 
             try:
-                prediction = future.result()
+                prediction = test_claim_against_api(claim, threshold)
             except Exception as e:
                 prediction = "CONNECTION_FAILED"
 
@@ -106,7 +94,7 @@ def run_benchmark(dataset_path, threshold, limit=50, max_workers=2):
 
             total += 1
             if total % 10 == 0:
-                print(f"  Processed {total}/{len(claims_to_test)} claims...")
+                print(f"  Processed {total}/{limit} claims...")
 
     accuracy = (correct / total) * 100 if total > 0 else 0
     print(f"Pass Complete! Accuracy: {accuracy:.2f}% ({correct}/{total})")
