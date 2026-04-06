@@ -117,12 +117,12 @@ def run_benchmark(dataset_path, threshold, limit=50):
             if total % 10 == 0:
                 print(f"  Processed {total}/{limit} claims...")
 
-    accuracy = (correct / total) * 100 if total > 0 else 0
-    print(f"Pass Complete! Accuracy: {accuracy:.2f}% ({correct}/{total})")
+    # Display results
+    print(f"\nBenchmark Results for Threshold {threshold}:")
 
-    # Calculate Macro-F1
+    # Calculate Precision, Recall, and F1 for each class
     print("\n--- Class Breakdown ---")
-    f1_scores = []
+    f1_scores = {}
     for c in classes:
         precision = TP[c] / (TP[c] + FP[c]) if (TP[c] + FP[c]) > 0 else 0
         recall = TP[c] / (TP[c] + FN[c]) if (TP[c] + FN[c]) > 0 else 0
@@ -131,21 +131,30 @@ def run_benchmark(dataset_path, threshold, limit=50):
             if (precision + recall) > 0
             else 0
         )
-        f1_scores.append(f1)
+        f1_scores[c] = f1
         print(
             f"Class '{c}': Precision: {precision:.2f} | Recall: {recall:.2f} | F1: {f1:.2f}"
         )
 
-    macro_f1 = sum(f1_scores) / len(f1_scores) if f1_scores else 0
-    print(f"\nOVERALL MACRO F1: {macro_f1:.4f}")
+    # Display accuracy
+    accuracy = (correct / total) * 100 if total > 0 else 0
+    print(f"\nAccuracy: {accuracy:.2f}% ({correct}/{total})")
+
+    # Display weighted F1
+    weighted_f1 = (
+        f1_scores["TRUE"] * true_label_proportions.support
+        + f1_scores["FALSE"] * true_label_proportions.contradict
+        + f1_scores["NEUTRAL"] * true_label_proportions.neutral
+    ) / total
+    print(f"Weighted F1: {weighted_f1:.4f}")
 
     print(
-        f"Model Label Proportions: Support={model_label_proportions.support / total:.2f}, Contradict={model_label_proportions.contradict / total:.2f}, Neutral={model_label_proportions.neutral / total:.2f}"
+        f"\nModel Label Proportions: Support={model_label_proportions.support / total:.2f}, Contradict={model_label_proportions.contradict / total:.2f}, Neutral={model_label_proportions.neutral / total:.2f}"
     )
     print(
         f"True Label Proportions: Support={true_label_proportions.support / total:.2f}, Contradict={true_label_proportions.contradict / total:.2f}, Neutral={true_label_proportions.neutral / total:.2f}"
     )
-    return macro_f1
+    return weighted_f1
 
 
 def hyperparameter_tuning(dataset_path, thresholds_to_test, limit=50):
