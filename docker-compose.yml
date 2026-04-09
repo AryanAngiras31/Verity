@@ -45,6 +45,22 @@ services:
     # -x run: Execute 'cargo run' when a change is detected
     command: cargo watch -w src -x run
 
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      # This anonymous volume prevents your host machine from overriding the
+      # container's node_modules, avoiding OS-specific binding issues.
+      - /app/node_modules
+    depends_on:
+      - backend
+    environment:
+      - CHOKIDAR_USEPOLLING=true # Ensures hot-reloading works flawlessly inside Docker
+      - VITE_API_URL=http://localhost:8080
+
 # Declare the named volume used by the backend
 volumes:
   backend_target:
