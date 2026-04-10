@@ -1,46 +1,48 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Lora:wght@500;600&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
     :root {
-        /* Very soft cool-blue background for the application */
-        --background: 210 40% 98%;
-        --foreground: 222.2 84% 4.9%;
+        /* Soft, muted pastel background (slightly warmer off-white) */
+        --background: 210 25% 98%;
+        --foreground: 222 47% 11%;
 
-        /* Pure white for cards to pop against the background */
+        /* Clean white for cards */
         --card: 0 0% 100%;
-        --card-foreground: 222.2 84% 4.9%;
+        --card-foreground: 222 47% 11%;
 
         --popover: 0 0% 100%;
-        --popover-foreground: 222.2 84% 4.9%;
+        --popover-foreground: 222 47% 11%;
 
-        /* Dusty clinical blue (matches your 'Verify Claim' button) */
-        --primary: 204 45% 65%;
-        --primary-foreground: 210 40% 98%;
+        /* Soft "Powder Blue" for primary actions */
+        --primary: 205 35% 78%;
+        --primary-foreground: 210 25% 20%;
 
-        --secondary: 210 40% 96.1%;
-        --secondary-foreground: 222.2 47.4% 11.2%;
+        --secondary: 210 20% 96%;
+        --secondary-foreground: 222 47% 11%;
 
-        --muted: 210 40% 96.1%;
-        --muted-foreground: 215.4 16.3% 46.9%;
+        --muted: 210 20% 96%;
+        --muted-foreground: 215 16% 47%;
 
-        --accent: 210 40% 96.1%;
-        --accent-foreground: 222.2 47.4% 11.2%;
+        --accent: 210 20% 96%;
+        --accent-foreground: 222 47% 11%;
 
-        --destructive: 0 84.2% 60.2%;
+        --destructive: 0 84% 60%;
         --destructive-foreground: 210 40% 98%;
 
-        /* Semantic Stance Colors for the Evidence Ledger */
-        --stance-support: 142 71% 45%; /* Green */
-        --stance-refute: 0 84% 60%; /* Red */
-        --stance-neutral: 38 92% 50%; /* Amber */
+        /* Softened Pastel Stance Colors */
+        --stance-support: 155 35% 65%; /* Sage/Mint Green */
+        --stance-refute: 0 40% 75%; /* Dusty Rose/Coral */
+        --stance-neutral: 42 45% 75%; /* Pale Butter Gold */
 
-        --border: 214.3 31.8% 91.4%;
-        --input: 214.3 31.8% 91.4%;
-        --ring: 204 45% 65%;
+        --border: 214 32% 91%;
+        --input: 214 32% 91%;
+        --ring: 205 35% 78%;
 
-        --radius: 0.75rem;
+        --radius: 0.85rem;
     }
 }
 
@@ -51,7 +53,16 @@
     body {
         background-color: hsl(var(--background));
         color: hsl(var(--foreground));
+        /* Main body font: Clean Sans-Serif */
+        font-family: "Inter", sans-serif;
         -webkit-font-smoothing: antialiased;
-        -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Apply the Claude-style Serif font to the 'Verity' name and main headers */
+    h1,
+    h2,
+    .font-serif {
+        font-family: "Lora", serif;
+        letter-spacing: -0.01em;
     }
 }
