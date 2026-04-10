@@ -76,8 +76,8 @@ async fn verify_claim(
         tensor_data[0..384].to_vec()
     };
 
-    // Extract the dynamic threshold from the request (default to 0.80)
-    let threshold: f32 = req_body.qdrant_threshold.unwrap_or(0.75);
+    // Extract the dynamic threshold from the request (default to 0.60)
+    let threshold: f32 = req_body.qdrant_threshold.unwrap_or(0.60);
     // Query Qdrant for top 5 matches
     let query_request = QueryPointsBuilder::new(COLLECTION_NAME)
         .query(embedding)
