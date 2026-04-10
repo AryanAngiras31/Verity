@@ -127,17 +127,17 @@ export default function App() {
                 }
                 className="text-xs bg-muted hover:bg-border text-muted-foreground px-3 py-1.5 rounded-full transition-colors text-left line-clamp-1"
               >
-                Vitamin D supplementation prevents respiratory infections.
+                Vitamin D supplementation prevents respi...
               </button>
               <button
                 onClick={() =>
                   setExample(
-                    "Medications to treat obesity have unwanted side effects.",
+                    "Medications to treat obesity do not have unwanted side effects.",
                   )
                 }
                 className="text-xs bg-muted hover:bg-border text-muted-foreground px-3 py-1.5 rounded-full transition-colors text-left line-clamp-1"
               >
-                Medications to treat obesity have unwanted side effects.
+                Medications to treat obesity do not have...
               </button>
             </div>
           </div>
@@ -166,24 +166,43 @@ export default function App() {
               {evidence.map((item, idx) => (
                 <div
                   key={idx}
-                  className="bg-card border border-border rounded-xl p-5 shadow-sm hover:shadow transition-shadow"
+                  className="bg-card border border-border rounded-xl p-5 shadow-sm hover:shadow transition-shadow flex flex-col justify-between"
                 >
-                  <div className="flex items-start justify-between mb-3 gap-4">
-                    <h3 className="font-semibold text-foreground leading-tight">
-                      <a
-                        href={`https://scholar.google.com/scholar?q=${encodeURIComponent(item.title)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="hover:underline hover:text-primary transition-colors flex items-start gap-1.5 group"
-                        title="Search this paper on Google Scholar"
-                      >
-                        <span>{item.title}</span>
-                        <ExternalLink className="w-3.5 h-3.5 mt-1 shrink-0 text-muted-foreground group-hover:text-primary transition-colors" />
-                      </a>
-                    </h3>
-                    <div className="flex flex-col items-end shrink-0">
+                  <div>
+                    <div className="flex items-start mb-3">
+                      <h3 className="font-semibold text-foreground leading-tight">
+                        <a
+                          href={`https://scholar.google.com/scholar?q=${encodeURIComponent(item.title)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:underline hover:text-primary transition-colors flex items-start gap-1.5 group"
+                          title="Search this paper on Google Scholar"
+                        >
+                          <span>{item.title}</span>
+                          <ExternalLink className="w-3.5 h-3.5 mt-1 shrink-0 text-muted-foreground group-hover:text-primary transition-colors" />
+                        </a>
+                      </h3>
+                    </div>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      "{item.snippet}"
+                    </p>
+                  </div>
+
+                  {/* FOOTER: Source and Stance/Match */}
+                  <div className="mt-4 pt-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-3 h-3 text-muted-foreground" />
+                      <span>
+                        Source:{" "}
+                        <span className="uppercase font-medium">
+                          {item.source}
+                        </span>
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
                       <span
-                        className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                        className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
                           item.stance === "SUPPORT"
                             ? "bg-[hsl(var(--stance-support)/0.15)] text-[hsl(var(--stance-support))]"
                             : item.stance === "REFUTE"
@@ -193,18 +212,10 @@ export default function App() {
                       >
                         {item.stance}
                       </span>
-                      <span className="text-xs text-muted-foreground mt-1">
+                      <span className="font-medium shrink-0">
                         {(item.confidence * 100).toFixed(1)}% match
                       </span>
                     </div>
-                  </div>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    "{item.snippet}"
-                  </p>
-                  <div className="mt-3 pt-3 border-t border-border flex items-center gap-2 text-xs text-muted-foreground">
-                    <AlertCircle className="w-3 h-3" />
-                    Source:{" "}
-                    <span className="uppercase font-medium">{item.source}</span>
                   </div>
                 </div>
               ))}

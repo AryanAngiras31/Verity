@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Lora:wght@500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Serif:wght@500;600&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -58,11 +58,11 @@
         -webkit-font-smoothing: antialiased;
     }
 
-    /* Apply the Claude-style Serif font to the 'Verity' name and main headers */
+    /* Apply Noto Serif to the 'Verity' name and main headers */
     h1,
     h2,
     .font-serif {
-        font-family: "Lora", serif;
+        font-family: "Noto Serif", serif;
         letter-spacing: -0.01em;
     }
 }
