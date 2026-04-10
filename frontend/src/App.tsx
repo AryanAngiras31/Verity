@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useVerityStore } from "./store/useVerityStore";
 import {
   FileText,
@@ -8,8 +8,20 @@ import {
   ExternalLink,
 } from "lucide-react";
 
+// The actual steps your Rust backend performs
+const LOADING_STEPS = [
+  "Embedding claim with BGE-Small...",
+  "Querying Qdrant Vector Database...",
+  "Retrieving semantic matches...",
+  "Running PubMedBERT cross-encoder...",
+  "Analyzing logical entailment...",
+  "Aggregating evidence stance...",
+];
+
 export default function App() {
   const [inputValue, setInputValue] = useState("");
+  const [messageIndex, setMessageIndex] = useState(0);
+
   const {
     currentClaim,
     verdict,
@@ -18,6 +30,19 @@ export default function App() {
     isLoading,
     verifyClaim,
   } = useVerityStore();
+
+  // Cycle through loading messages every 2 seconds while fetching
+  useEffect(() => {
+    let interval: number;
+    if (isLoading) {
+      interval = window.setInterval(() => {
+        setMessageIndex((prev) => (prev + 1) % LOADING_STEPS.length);
+      }, 4000);
+    } else {
+      setMessageIndex(0);
+    }
+    return () => clearInterval(interval);
+  }, [isLoading]);
 
   const handleVerify = (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,7 +58,6 @@ export default function App() {
     <div className="flex h-screen w-full bg-background overflow-hidden font-sans">
       {/* LEFT PANE: Input and Verdict */}
       <div className="w-[450px] min-w-[450px] h-full flex flex-col border-r border-border bg-card shadow-sm z-10">
-        {/* Header */}
         <header className="p-6 border-b border-border flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold">
             V
@@ -48,7 +72,6 @@ export default function App() {
           </div>
         </header>
 
-        {/* Verdict Panel */}
         <div className="flex-1 p-6 overflow-y-auto">
           <div className="bg-background border border-border rounded-xl p-8 flex flex-col items-center justify-center text-center min-h-[250px]">
             {isLoading ? (
@@ -75,8 +98,8 @@ export default function App() {
                     {(confidence! * 100).toFixed(1)}%
                   </span>
                 </p>
-                <p className="text-sm text-muted-foreground mt-4 px-4">
-                  Based on {evidence.length} peer-reviewed sources.
+                <p className="text-sm text-muted-foreground mt-4 px-4 font-medium italic">
+                  "Based on {evidence.length} peer-reviewed sources."
                 </p>
               </>
             ) : (
@@ -94,7 +117,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Claim Input Area */}
         <div className="p-6 border-t border-border bg-card">
           <form onSubmit={handleVerify} className="flex flex-col gap-4">
             <textarea
@@ -109,7 +131,7 @@ export default function App() {
               disabled={isLoading || !inputValue.trim()}
               className="w-full bg-primary text-primary-foreground hover:opacity-90 transition-opacity font-medium rounded-xl py-3 flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              {isLoading ? "Analyzing Literature..." : "Verify Claim"}
+              {isLoading ? "Analyzing..." : "Verify Claim"}
               {!isLoading && <ArrowRight className="w-4 h-4" />}
             </button>
           </form>
@@ -148,25 +170,37 @@ export default function App() {
       <div className="flex-1 h-full bg-background flex flex-col overflow-hidden">
         <header className="p-6 border-b border-border bg-background">
           <h2 className="text-lg font-semibold">Evidence Ledger</h2>
-          <p className="text-sm text-muted-foreground">
-            {currentClaim
-              ? `Analyzing: "${currentClaim}"`
-              : "Submit a claim to view evidence"}
-          </p>
+          <div className="text-sm text-muted-foreground h-5">
+            {currentClaim && (
+              <p className="flex items-center gap-1.5">
+                <span>Analyzing:</span>
+                {/* Subtle Pulse Animation on the claim text */}
+                <span
+                  className={`italic font-medium text-foreground ${isLoading ? "animate-pulse" : ""}`}
+                >
+                  "{currentClaim}"
+                </span>
+              </p>
+            )}
+            {!currentClaim && <p>Submit a claim to view evidence</p>}
+          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto p-8">
           {isLoading ? (
-            <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
-              <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
-              <p>Querying Qdrant Vector Database...</p>
+            <div className="h-full flex flex-col items-center justify-center text-muted-foreground animate-in fade-in duration-700">
+              <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-6"></div>
+              {/* Cycling Technical Tasks */}
+              <p className="text-sm font-medium tracking-wide uppercase opacity-80 animate-pulse">
+                {LOADING_STEPS[messageIndex]}
+              </p>
             </div>
           ) : evidence.length > 0 ? (
-            <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-6 animate-in slide-in-from-bottom-4 duration-500">
               {evidence.map((item, idx) => (
                 <div
                   key={idx}
-                  className="bg-card border border-border rounded-xl p-5 shadow-sm hover:shadow transition-shadow flex flex-col justify-between"
+                  className="bg-card border border-border rounded-xl p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between"
                 >
                   <div>
                     <div className="flex items-start mb-3">
@@ -176,10 +210,10 @@ export default function App() {
                           target="_blank"
                           rel="noopener noreferrer"
                           className="hover:underline hover:text-primary transition-colors flex items-start gap-1.5 group"
-                          title="Search this paper on Google Scholar"
+                          title="Search on Google Scholar"
                         >
                           <span>{item.title}</span>
-                          <ExternalLink className="w-3.5 h-3.5 mt-1 shrink-0 text-muted-foreground group-hover:text-primary transition-colors" />
+                          <ExternalLink className="w-3.5 h-3.5 mt-1 shrink-0 text-muted-foreground group-hover:text-primary" />
                         </a>
                       </h3>
                     </div>
@@ -188,19 +222,18 @@ export default function App() {
                     </p>
                   </div>
 
-                  {/* FOOTER: Source and Stance/Match */}
                   <div className="mt-4 pt-3 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
                     <div className="flex items-center gap-2">
-                      <AlertCircle className="w-3 h-3 text-muted-foreground" />
+                      <AlertCircle className="w-3 h-3" />
                       <span>
                         Source:{" "}
-                        <span className="uppercase font-medium">
+                        <span className="uppercase font-medium tracking-wider">
                           {item.source}
                         </span>
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2">
                       <span
                         className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
                           item.stance === "SUPPORT"
@@ -212,7 +245,7 @@ export default function App() {
                       >
                         {item.stance}
                       </span>
-                      <span className="font-medium shrink-0">
+                      <span className="font-medium whitespace-nowrap">
                         {(item.confidence * 100).toFixed(1)}% match
                       </span>
                     </div>
@@ -221,12 +254,12 @@ export default function App() {
               ))}
             </div>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-center max-w-sm mx-auto">
-              <div className="w-16 h-16 bg-muted rounded-2xl flex items-center justify-center mb-6 text-muted-foreground">
+            <div className="h-full flex flex-col items-center justify-center text-center max-w-sm mx-auto opacity-60">
+              <div className="w-16 h-16 bg-muted rounded-2xl flex items-center justify-center mb-6">
                 <FileText className="w-8 h-8" />
               </div>
               <h2 className="text-xl font-semibold mb-2">No Evidence Yet</h2>
-              <p className="text-muted-foreground">
+              <p className="text-muted-foreground text-sm">
                 Submit a claim to retrieve and analyze evidence from
                 peer-reviewed literature.
               </p>
