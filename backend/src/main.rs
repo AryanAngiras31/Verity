@@ -81,7 +81,7 @@ async fn verify_claim(
     // Query Qdrant for top 5 matches
     let query_request = QueryPointsBuilder::new(COLLECTION_NAME)
         .query(embedding)
-        .limit(5)
+        .limit(6)
         .score_threshold(threshold)
         .with_payload(true);
 

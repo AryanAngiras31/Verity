@@ -127,13 +127,17 @@ export default function App() {
                 }
                 className="text-xs bg-muted hover:bg-border text-muted-foreground px-3 py-1.5 rounded-full transition-colors text-left line-clamp-1"
               >
-                Vitamin D supplementation prevents respi...
+                Vitamin D supplementation prevents respiratory infections.
               </button>
               <button
-                onClick={() => setExample("mRNA vaccines alter human DNA.")}
+                onClick={() =>
+                  setExample(
+                    "Medications to treat obesity have unwanted side effects.",
+                  )
+                }
                 className="text-xs bg-muted hover:bg-border text-muted-foreground px-3 py-1.5 rounded-full transition-colors text-left line-clamp-1"
               >
-                mRNA vaccines alter human DNA
+                Medications to treat obesity have unwanted side effects.
               </button>
             </div>
           </div>
@@ -158,7 +162,7 @@ export default function App() {
               <p>Querying Qdrant Vector Database...</p>
             </div>
           ) : evidence.length > 0 ? (
-            <div className="max-w-3xl mx-auto flex flex-col gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-6">
               {evidence.map((item, idx) => (
                 <div
                   key={idx}
