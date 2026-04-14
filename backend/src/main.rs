@@ -81,7 +81,7 @@ async fn verify_claim(
     // Query Qdrant for top 5 matches
     let query_request = QueryPointsBuilder::new(COLLECTION_NAME)
         .query(embedding)
-        .limit(6)
+        .limit(9)
         .score_threshold(threshold)
         .with_payload(true);
 
@@ -98,6 +98,11 @@ async fn verify_claim(
         }
     };
 
+    // Perform dynamic radius retrieval
+    let radius: f32 = 0.05;
+    let top_result = response.result.first().map(|hit| hit.score).unwrap_or(0.0);
+    let response = response.result.into_iter().filter(|hit| hit.score >= top_result - radius).collect::<Vec<_>>();
+
     // Cross Encoder Inference
     let mut evidence_list: Vec<Evidence> = Vec::new();
 
@@ -109,7 +114,7 @@ async fn verify_claim(
     let mut highest_weighted_confidence: f32 = 0.0;
     let mut raw_confidence_for_verdict: f32 = 0.0;
 
-    for hit in response.result.iter() {
+    for hit in response.iter() {
         let payload = &hit.payload;
 
         let get_string = |key: &str| {
@@ -161,13 +166,27 @@ async fn verify_claim(
 
             let shape = vec![1, input_ids.len() as i64];
 
-            let outputs = cross_encoder.run(ort::inputs![
+            let cross_encoder_result = cross_encoder.run(ort::inputs![
                 "input_ids" => Tensor::from_array((shape.clone(), input_ids)).unwrap(),
                 "attention_mask" => Tensor::from_array((shape.clone(), attention_mask)).unwrap(),
                 "token_type_ids" => Tensor::from_array((shape.clone(), token_type_ids)).unwrap(),
-            ]).expect("Cross-Encoder inference failed");
+            ]);
 
-            let (_shape, logits_data) = outputs["logits"].try_extract_tensor::<f32>().unwrap();
+            let outputs = match cross_encoder_result {
+                Ok(outputs) => outputs,
+                Err(e) => {
+                    println!("Warning: Skipping chunk. ONNX inference failed (likely exceeded 512 tokens). Length: {}, Error: {:?}", seq_len, e);
+                    continue;
+                }
+            };
+
+            let (_shape, logits_data) = match outputs["logits"].try_extract_tensor::<f32>() {
+                Ok((shape, logits_data)) => (shape, logits_data),
+                Err(e) => {
+                    println!("Warning: Failed to extract tensor, Error: {:?}", e);
+                    continue;
+                }
+            };
             let logits = &logits_data[0..3];
 
             let max_logit: f32 = logits[0].max(logits[1].max(logits[2]));
