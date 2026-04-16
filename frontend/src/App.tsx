@@ -7,13 +7,14 @@ import {
   AlertCircle,
   ExternalLink,
 } from "lucide-react";
+import logo from "./assets/logo.png";
 
 // The actual steps your Rust backend performs
 const LOADING_STEPS = [
-  "Embedding claim with BGE-Small...",
-  "Querying Qdrant Vector Database...",
+  "Embedding claim...",
+  "Querying the database...",
   "Retrieving semantic matches...",
-  "Running PubMedBERT cross-encoder...",
+  "Running the cross-encoder...",
   "Analyzing logical entailment...",
   "Aggregating evidence stance...",
 ];
@@ -58,10 +59,12 @@ export default function App() {
     <div className="flex h-screen w-full bg-background overflow-hidden font-sans">
       {/* LEFT PANE: Input and Verdict */}
       <div className="w-[450px] min-w-[450px] h-full flex flex-col border-r border-border bg-card shadow-sm z-10">
-        <header className="p-6 border-b border-border flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold">
-            V
-          </div>
+        <header className="h-24 p-6 border-b border-border flex items-center gap-3 shrink-0">
+          <img
+            src={logo}
+            alt="Verity Logo"
+            className="w-11 h-11 rounded-full object-cover shadow-sm border border-border/50"
+          />
           <div>
             <h1 className="text-xl font-semibold leading-tight text-foreground">
               Verity
@@ -168,7 +171,7 @@ export default function App() {
 
       {/* RIGHT PANE: Evidence Ledger */}
       <div className="flex-1 h-full bg-background flex flex-col overflow-hidden">
-        <header className="p-6 border-b border-border bg-background">
+        <header className="h-24 p-6 border-b border-border bg-background shrink-0">
           <h2 className="text-lg font-semibold">Evidence Ledger</h2>
           <div className="text-sm text-muted-foreground h-5">
             {currentClaim && (
@@ -186,12 +189,12 @@ export default function App() {
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-8">
+        <div className="flex-1 overflow-y-auto p-6">
           {isLoading ? (
             <div className="h-full flex flex-col items-center justify-center text-muted-foreground animate-in fade-in duration-700">
               <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-6"></div>
               {/* Cycling Technical Tasks */}
-              <p className="text-sm font-medium tracking-wide uppercase opacity-80 animate-pulse">
+              <p className="text-sm font-medium opacity-80 animate-pulse text-muted-foreground">
                 {LOADING_STEPS[messageIndex]}
               </p>
             </div>
