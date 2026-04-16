@@ -58,7 +58,7 @@ export default function App() {
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden font-sans">
       {/* LEFT PANE: Input and Verdict */}
-      <div className="w-[450px] min-w-[450px] h-full flex flex-col border-r border-border bg-card shadow-sm z-10">
+      <div className="w-[450px] min-w-[450px] h-full flex flex-col border-r border-border bg-background shadow-sm z-10">
         <header className="h-24 p-6 border-b border-border flex items-center gap-3 shrink-0">
           <img
             src={logo}
@@ -76,7 +76,7 @@ export default function App() {
         </header>
 
         <div className="flex-1 p-6 overflow-y-auto">
-          <div className="bg-background border border-border rounded-xl p-8 flex flex-col items-center justify-center text-center min-h-[250px]">
+          <div className="bg-card border border-border rounded-xl p-8 flex flex-col items-center justify-center text-center min-h-[250px]">
             {isLoading ? (
               <div className="animate-pulse flex flex-col items-center">
                 <div className="w-12 h-12 bg-muted rounded-lg mb-4"></div>
@@ -120,7 +120,7 @@ export default function App() {
           </div>
         </div>
 
-        <div className="p-6 border-t border-border bg-card">
+        <div className="p-6 border-t border-border bg-background">
           <form onSubmit={handleVerify} className="flex flex-col gap-4">
             <textarea
               className="w-full h-24 p-3 bg-background border border-border rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
@@ -132,7 +132,7 @@ export default function App() {
             <button
               type="submit"
               disabled={isLoading || !inputValue.trim()}
-              className="w-full bg-primary text-primary-foreground hover:opacity-90 transition-opacity font-medium rounded-xl py-3 flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full bg-primary text-primary-foreground hover:opacity-85 transition-opacity font-medium rounded-xl py-3 flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {isLoading ? "Analyzing..." : "Verify Claim"}
               {!isLoading && <ArrowRight className="w-4 h-4" />}
@@ -152,7 +152,7 @@ export default function App() {
                 }
                 className="text-xs bg-muted hover:bg-border text-muted-foreground px-3 py-1.5 rounded-full transition-colors text-left line-clamp-1"
               >
-                Vitamin D supplementation prevents respi...
+                Vitamin D supplementation prevents respiratory infections.
               </button>
               <button
                 onClick={() =>
@@ -162,7 +162,7 @@ export default function App() {
                 }
                 className="text-xs bg-muted hover:bg-border text-muted-foreground px-3 py-1.5 rounded-full transition-colors text-left line-clamp-1"
               >
-                Medications to treat obesity do not have...
+                Medications to treat obesity do not have unwanted side effects.
               </button>
             </div>
           </div>
@@ -212,11 +212,11 @@ export default function App() {
                           href={`https://scholar.google.com/scholar?q=${encodeURIComponent(item.title)}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="hover:underline hover:text-primary transition-colors flex items-start gap-1.5 group"
+                          className="hover:underline hover:text-blue-400 transition-colors flex items-start gap-1.5 group"
                           title="Search on Google Scholar"
                         >
                           <span>{item.title}</span>
-                          <ExternalLink className="w-3.5 h-3.5 mt-1 shrink-0 text-muted-foreground group-hover:text-primary" />
+                          <ExternalLink className="w-3.5 h-3.5 mt-1 shrink-0 text-muted-foreground group-hover:text-blue-400" />
                         </a>
                       </h3>
                     </div>

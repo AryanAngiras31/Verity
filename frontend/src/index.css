@@ -7,18 +7,18 @@
 @layer base {
     :root {
         /* Soft, muted pastel background (slightly warmer off-white) */
-        --background: 210 25% 98%;
+        --background: 0 0% 100%;
         --foreground: 222 47% 11%;
 
         /* Clean white for cards */
-        --card: 0 0% 100%;
+        --card: 200 30% 99%;
         --card-foreground: 222 47% 11%;
 
         --popover: 0 0% 100%;
         --popover-foreground: 222 47% 11%;
 
         /* Soft "Powder Blue" for primary actions */
-        --primary: 205 35% 78%;
+        --primary: 185 45% 90%;
         --primary-foreground: 210 25% 20%;
 
         --secondary: 210 20% 96%;
