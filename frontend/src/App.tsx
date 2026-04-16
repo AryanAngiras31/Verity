@@ -146,13 +146,11 @@ export default function App() {
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() =>
-                  setExample(
-                    "Vitamin D supplementation prevents respiratory infections.",
-                  )
+                  setExample("Mitochondria play a major role in apoptosis.")
                 }
                 className="text-xs bg-muted hover:bg-border text-muted-foreground px-3 py-1.5 rounded-full transition-colors text-left line-clamp-1"
               >
-                Vitamin D supplementation prevents respiratory infections.
+                Mitochondria play a major role in apoptosis.
               </button>
               <button
                 onClick={() =>
@@ -249,7 +247,7 @@ export default function App() {
                         {item.stance}
                       </span>
                       <span className="font-medium whitespace-nowrap">
-                        {(item.confidence * 100).toFixed(1)}% match
+                        {(item.confidence * 100).toFixed(1)}% confidence
                       </span>
                     </div>
                   </div>

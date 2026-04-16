@@ -35,7 +35,7 @@ async fn verify_claim(
     println!("Received claim: {}", claim);
     println!("============================================================================================================\n");
 
-    // --- NEW FIX: BGE-Small strictly requires this exact prefix for search queries! ---
+    // BGE-Small strictly requires this exact prefix for search queries
     let bi_encoder_query = format!("Represent this sentence for searching relevant passages: {}", claim);
     // Embed the claim using the BGE Small model
     let encoding = data.bi_encoder_tokenizer.encode(bi_encoder_query, true).expect("Failed to encode claim using the Bi-Encoder tokenizer");
@@ -77,7 +77,7 @@ async fn verify_claim(
     };
 
     // Extract the dynamic threshold from the request (default to 0.60)
-    let threshold: f32 = req_body.qdrant_threshold.unwrap_or(0.60);
+    let threshold: f32 = req_body.qdrant_threshold.unwrap_or(0.55);
     // Query Qdrant for top 5 matches
     let query_request = QueryPointsBuilder::new(COLLECTION_NAME)
         .query(embedding)
@@ -109,10 +109,10 @@ async fn verify_claim(
     // Get the Mutex lock for the Cross Encoder model
     let mut cross_encoder = data.cross_encoder_model.lock().expect("Could not get Mutex lock for the Cross Encoder model");
 
-    // TRACKERS FOR DOCUMENT-LEVEL MAX POOLING
-    let mut final_verdict = "NEUTRAL".to_string();
-    let mut highest_weighted_confidence: f32 = 0.0;
-    let mut raw_confidence_for_verdict: f32 = 0.0;
+    // Trackers for document-level thresholded weighted sum pooling
+    let mut weighted_support_sum: f32 = 0.0;
+    let mut weighted_refute_sum: f32 = 0.0;
+    let mut highest_neutral_score: f32 = 0.0;
 
     for hit in response.iter() {
         let payload = &hit.payload;
@@ -221,16 +221,21 @@ async fn verify_claim(
             confidence = 1.0 - best_support - best_refute;
         }
 
-        // DOCUMENT-LEVEL WEIGHTED MAX POOLING
+        // Document-level thresholded weighted sum pooling
         let weighted_confidence = confidence * _score;
 
-        // Apply a strict 0.80 logic threshold so weak hallucinations don't win
-        if stance != "NEUTRAL" && confidence > 0.80 {
-            if weighted_confidence > highest_weighted_confidence {
-                highest_weighted_confidence = weighted_confidence;
-                final_verdict = stance.clone();
-                raw_confidence_for_verdict = confidence; // Keep for the JSON response
+        // Apply a strict 0.80 logic threshold
+        if confidence > 0.80 {
+            if stance == "SUPPORT" {
+                weighted_support_sum += weighted_confidence;
+            } else if stance == "REFUTE" {
+                weighted_refute_sum += weighted_confidence;
             }
+        }
+
+        // Track the highest neutral score just in case all documents are filtered out
+        if stance == "NEUTRAL" && confidence > highest_neutral_score {
+            highest_neutral_score = confidence;
         }
 
         evidence_list.push(types::Evidence {
@@ -245,18 +250,28 @@ async fn verify_claim(
     drop(cross_encoder);
 
     // Map output to match the True/False expectation for your benchmark script
-    if final_verdict == "SUPPORT" {
-        final_verdict = "TRUE".to_string();
-    } else if final_verdict == "REFUTE" {
-        final_verdict = "FALSE".to_string();
-    }
+    let mut final_verdict = "NEUTRAL".to_string();
+    let aggregate_confidence;
 
-    // If all documents were filtered out or neutral, fallback to the highest neutral score
-    let aggregate_confidence = if final_verdict != "NEUTRAL" {
-        raw_confidence_for_verdict
+    // The stance with the most accumulated weighted evidence wins
+    if weighted_support_sum > weighted_refute_sum && weighted_support_sum > 0.0 {
+        final_verdict = "TRUE".to_string();
+
+        // Normalize the confidence for the frontend display (optional, keeps it between 0 and 1)
+        // Since it's a sum, it could exceed 1.0. We divide by the total sum to get a percentage.
+        let total_sum = weighted_support_sum + weighted_refute_sum;
+        aggregate_confidence = weighted_support_sum / total_sum;
+
+    } else if weighted_refute_sum > weighted_support_sum && weighted_refute_sum > 0.0 {
+        final_verdict = "FALSE".to_string();
+
+        let total_sum = weighted_support_sum + weighted_refute_sum;
+        aggregate_confidence = weighted_refute_sum / total_sum;
+
     } else {
-        evidence_list.iter().map(|e| e.confidence).fold(0.0, f32::max)
-    };
+        // Fallback if no documents passed the 0.80 threshold
+        aggregate_confidence = highest_neutral_score;
+    }
 
     let response = VerifyResponse {
         final_verdict,
