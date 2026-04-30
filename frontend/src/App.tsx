@@ -6,6 +6,8 @@ import {
   ShieldCheck,
   AlertCircle,
   ExternalLink,
+  XCircle,
+  X
 } from "lucide-react";
 import logo from "./assets/logo.png";
 
@@ -30,6 +32,8 @@ export default function App() {
     evidence,
     isLoading,
     verifyClaim,
+    error,
+    clearError,
   } = useVerityStore();
 
   // Cycle through loading messages every 2 seconds while fetching
@@ -132,7 +136,7 @@ export default function App() {
             <button
               type="submit"
               disabled={isLoading || !inputValue.trim()}
-              className="w-full bg-primary text-primary-foreground hover:opacity-85 transition-opacity font-medium rounded-xl py-3 flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full bg-primary text-foreground hover:opacity-85 transition-opacity font-semibold rounded-xl py-3 flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {isLoading ? "Analyzing..." : "Verify Claim"}
               {!isLoading && <ArrowRight className="w-4 h-4" />}
@@ -168,7 +172,7 @@ export default function App() {
       </div>
 
       {/* RIGHT PANE: Evidence Ledger */}
-      <div className="flex-1 h-full bg-background flex flex-col overflow-hidden">
+      <div className="flex-1 h-full bg-background flex flex-col overflow-hidden relative">
         <header className="h-24 p-6 border-b border-border bg-background shrink-0">
           <h2 className="text-lg font-semibold">Evidence Ledger</h2>
           <div className="text-sm text-muted-foreground h-5">
@@ -187,9 +191,9 @@ export default function App() {
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-6 bg-background">
           {isLoading ? (
-            <div className="h-full flex flex-col items-center justify-center text-muted-foreground animate-in fade-in duration-700">
+            <div className="h-full flex flex-col items-center justify-center text-muted-foreground animate-in fade-in duration-700 bg-background">
               <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-6"></div>
               {/* Cycling Technical Tasks */}
               <p className="text-sm font-medium opacity-80 animate-pulse text-muted-foreground">
@@ -255,7 +259,7 @@ export default function App() {
               ))}
             </div>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-center max-w-sm mx-auto opacity-60">
+            <div className="h-full flex flex-col items-center justify-center text-center max-w-sm mx-auto opacity-60 bg-background">
               <div className="w-16 h-16 bg-muted rounded-2xl flex items-center justify-center mb-6">
                 <FileText className="w-8 h-8" />
               </div>
@@ -267,6 +271,30 @@ export default function App() {
             </div>
           )}
         </div>
+        {error && (
+          <div className="absolute top-[55%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg px-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-card/95 backdrop-blur-md border border-red-500/50 shadow-2xl rounded-2xl p-6 py-8 min-h-[180px] flex items-start gap-4">
+              <XCircle className="w-6 h-6 text-red-500 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h3 className="text-base font-semibold text-foreground mb-1.5">
+                  Connection Error
+                </h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  The Verity backend is currently unreachable. The service may be asleep or down. Please try again later.
+                </p>
+                <p className="text-xs font-mono text-red-400/70 mt-3 line-clamp-2">
+                  {error}
+                </p>
+              </div>
+              <button
+                onClick={clearError}
+                className="text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded-md hover:bg-muted"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

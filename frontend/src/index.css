@@ -8,7 +8,7 @@
     :root {
         /* Soft, muted pastel background (slightly warmer off-white) */
         --background: 0 0% 100%;
-        --foreground: 222 47% 11%;
+        --foreground: 222 47% 20%;
 
         /* Clean white for cards */
         --card: 200 30% 99%;
@@ -25,7 +25,7 @@
         --secondary-foreground: 222 47% 11%;
 
         --muted: 210 20% 96%;
-        --muted-foreground: 215 16% 47%;
+        --muted-foreground: 215 6% 35%;
 
         --accent: 210 20% 96%;
         --accent-foreground: 222 47% 11%;

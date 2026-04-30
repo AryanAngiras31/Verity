@@ -30,6 +30,7 @@ interface VerityState {
   // --- Actions ---
   verifyClaim: (claim: string) => Promise<void>;
   reset: () => void;
+  clearError: () => void;
 }
 
 // 3. Create the Store
@@ -51,6 +52,8 @@ export const useVerityStore = create<VerityState>((set) => ({
       error: null,
       isLoading: false,
     }),
+
+  clearError: () => set({ error: null }),
 
   // Async Action to call the Rust API
   verifyClaim: async (claim: string) => {
