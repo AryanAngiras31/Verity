@@ -40,7 +40,7 @@ def consolidate_hf_datasets():
             "allenai/scifact", name="corpus", split="train", trust_remote_code=True
         )
         scifact_claims = load_dataset(
-            "allenai/scifact", name="claims", split="train", trust_remote_code=True
+            "allenai/scifact", name="claims", split="train+validation+test", trust_remote_code=True
         )
     except Exception as e:
         print(f"Error downloading SciFact: {e}")
@@ -50,10 +50,37 @@ def consolidate_hf_datasets():
         print("Downloading HealthVer from Hugging Face...")
         # 'dwadden/healthver_entailment' is pre-formatted with abstracts and verdicts
         healthver = load_dataset(
-            "dwadden/healthver_entailment", split="train", trust_remote_code=True
+            "dwadden/healthver_entailment", split="train+validation+test", trust_remote_code=True
         )
     except Exception as e:
         print(f"Error downloading HealthVer: {e}")
+        return
+
+    try:
+        print("Downloading LaySummary from Hugging Face...")
+        lay_summ_corpus = load_dataset(
+            "sulovexin/laysummary", split="train+validation+test", trust_remote_code=True
+        )   
+    except Exception as e:
+        print(f"Error downloading LaySummary: {e}")
+        return
+
+    try:
+        print("Downloading BioLaySumm2025-PLOS from Hugging Face...")
+        bio_lay_summ_plos_corpus = load_dataset(
+            "BioLaySumm/BioLaySumm2025-PLOS", split="train+validation+test", trust_remote_code=True
+        )
+    except Exception as e:
+        print(f"Error downloading BioLaySumm2025-PLOS: {e}")
+        return
+
+    try:
+        print("Downloading BioLaySumm2025-eLife from Hugging Face...")
+        bio_lay_summ_elife_corpus = load_dataset(
+            "BioLaySumm/BioLaySumm2025-eLife", split="train+validation+test", trust_remote_code=True
+        )
+    except Exception as e:
+        print(f"Error downloading BioLaySumm2025-eLife: {e}")
         return
 
     # --- 1. Process SciFact ---
@@ -66,7 +93,7 @@ def consolidate_hf_datasets():
         master_corpus[doc_id] = {
             "doc_id": doc_id,
             "title": doc.get("title", ""),
-            "abstract": doc["abstract"],
+            "abstract": " ".join(doc["abstract"]),
             "dataset_source": "scifact",
         }
         if title_norm:
@@ -107,7 +134,7 @@ def consolidate_hf_datasets():
         stance = label_map.get(raw_label, "NEUTRAL")
 
         raw_doc_id = str(item["abstract_id"])
-        title = item.get("title", "Unknown Title")
+        title = item.get("title", "")
         title_norm = normalize_title(title)
 
         # Deduplicate using title hash
@@ -121,7 +148,7 @@ def consolidate_hf_datasets():
             master_corpus[final_doc_id] = {
                 "doc_id": final_doc_id,
                 "title": title,
-                "abstract": item["abstract"],
+                "abstract": " ".join(item["abstract"]),
                 "dataset_source": "healthver",
             }
 
@@ -144,6 +171,41 @@ def consolidate_hf_datasets():
             "dataset_source": "healthver",
         }
         master_claims.append(unified_claim)
+
+    # --- 3. Process BioLaySumm ---
+    print("Processing BioLaySumm...")
+    bio_plos_counter = 0
+    for doc in bio_lay_summ_plos_corpus:
+        id = f"bio_plos_{bio_plos_counter}"
+        master_corpus[str(id)] = {
+            "doc_id": str(id),
+            "title": doc.get("title", ""),
+            "abstract": doc["summary"],
+            "dataset_source": "bio_lay_summ_plos",
+        }
+        bio_plos_counter += 1
+
+    bio_elife_counter = 0
+    for doc in bio_lay_summ_elife_corpus:
+        id = f"bio_elife_{bio_elife_counter}"
+        master_corpus[str(id)] = {
+            "doc_id": str(id),
+            "title": doc.get("title", ""),
+            "abstract": doc["summary"],
+            "dataset_source": "bio_lay_summ_elife",
+        }
+        bio_elife_counter += 1
+
+    # --- 4. Process LaySumm ---
+    print("Processing LaySumm...")
+    for doc in lay_summ_corpus:
+        id = str(doc["id"])
+        master_corpus[id] = {
+            "doc_id": id,
+            "title": doc.get("title", ""),
+            "abstract": doc["summary"],
+            "dataset_source": "lay_summ",
+        }
 
     # Create consolidated claims
     print("Consolidating claims for benchmark (one label per claim)...")
@@ -184,15 +246,15 @@ def consolidate_hf_datasets():
     print(f"Total Claims: {len(master_claims)}")
     print(f"Total Consolidated Claims for Benchmark: {len(consolidated_list)}")
 
-    # --- 3. Export to JSONL ---
+    # --- 5. Export to JSONL ---
     print(
         "Writing to hybrid_corpus.jsonl and hybrid_claims.jsonl to the mounted volume..."
     )
-    with jsonlines.open("/app/output/hybrid_corpus.jsonl", mode="w") as writer:
+    with jsonlines.open(CORPUS_FILE, mode="w") as writer:
         for doc in master_corpus.values():
             writer.write(doc)
 
-    with jsonlines.open("/app/output/hybrid_claims.jsonl", mode="w") as writer:
+    with jsonlines.open(CLAIMS_FILE, mode="w") as writer:
         for claim in master_claims:
             writer.write(claim)
 

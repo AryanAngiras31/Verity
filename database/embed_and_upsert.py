@@ -59,12 +59,12 @@ def embed_and_upsert(qdrant, model, filename, batchsize=500):
     with jsonlines.open(filename) as reader:
         for doc in reader:
             # 1. Join the abstract sentences into single string
-            joined_abstract = " ".join(doc["abstract"])
+            abstract = doc["abstract"]
 
             # 2. Format the joined abstract for embedding
             # Format for BGE-Small: Title + [SEP] + Abstract
             formatted_abstract = (
-                doc["title"] + model.tokenizer.sep_token + joined_abstract
+                doc["title"] + model.tokenizer.sep_token + abstract
             )
 
             # 3. Embed the formtted abstract
@@ -80,7 +80,7 @@ def embed_and_upsert(qdrant, model, filename, batchsize=500):
                 payload={
                     "doc_id": str(doc["doc_id"]),
                     "title": doc["title"],
-                    "abstract": joined_abstract,
+                    "abstract": abstract,
                     "dataset_source": doc.get("dataset_source", "unknown"),
                 },
             )
