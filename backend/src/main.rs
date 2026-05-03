@@ -76,7 +76,7 @@ async fn verify_claim(
         tensor_data[0..384].to_vec()
     };
 
-    // Extract the dynamic threshold from the request (default to 0.60)
+    // Extract the dynamic threshold from the request (default to 0.55)
     let threshold: f32 = req_body.qdrant_threshold.unwrap_or(0.55);
     // Query Qdrant for top 5 matches
     let query_request = QueryPointsBuilder::new(COLLECTION_NAME)
@@ -117,6 +117,7 @@ async fn verify_claim(
     for hit in response.iter() {
         let payload = &hit.payload;
 
+        // Helper to get fields from Qdrant response
         let get_string = |key: &str| {
             payload.get(key).and_then(|v| v.as_str()).map(|s| s.as_str()).unwrap_or("Unknown")
         };
@@ -125,18 +126,18 @@ async fn verify_claim(
         let source = get_string("dataset_source");
         let abstract_text = get_string("abstract");
 
-        // WE WILL USE THIS NOW
         let _score = hit.score;
 
         println!("----------------------------------------------------------------------------------------------------");
         println!("Score: {:.4} | Title: {} [{}]", _score, title, source);
         println!("----------------------------------------------------------------------------------------------------\n");
 
-        // CHUNK-LEVEL MAX POOLING
+        // Variables for chunk-level max pooling
         let mut best_support: f32 = 0.0;
         let mut best_refute: f32 = 0.0;
         let mut max_signal: f32 = 0.0;
 
+        // Clean and split the abstract text into sentences
         let sentences: Vec<String> = abstract_text
             .split(". ")
             .map(|s| s.trim())
@@ -147,6 +148,7 @@ async fn verify_claim(
         let window_size = 2;
         let mut chunks: Vec<String> = Vec::new();
 
+        // If there are less than two sentences, combine them. If there are more, perform windowing
         if sentences.len() <= window_size {
             chunks.push(sentences.join(" "));
         } else {
@@ -156,6 +158,7 @@ async fn verify_claim(
         }
 
         for clean_chunk in chunks {
+            // Tokenize the chunk
             let encoding = data.cross_encoder_tokenizer
                 .encode((clean_chunk.as_str(), claim), true)
                 .expect("Failed to tokenize chunk and claim");
@@ -166,6 +169,7 @@ async fn verify_claim(
 
             let shape = vec![1, input_ids.len() as i64];
 
+            // Get logits for the chunk
             let cross_encoder_result = cross_encoder.run(ort::inputs![
                 "input_ids" => Tensor::from_array((shape.clone(), input_ids)).unwrap(),
                 "attention_mask" => Tensor::from_array((shape.clone(), attention_mask)).unwrap(),
@@ -187,6 +191,7 @@ async fn verify_claim(
                     continue;
                 }
             };
+            // The logits are in the order: [refute, support, neutral]. 
             let logits = &logits_data[0..3];
 
             let max_logit: f32 = logits[0].max(logits[1].max(logits[2]));
@@ -194,12 +199,13 @@ async fn verify_claim(
             let sum_logits: f32 = exp_logits.iter().sum();
             let softmax_probs: Vec<f32> = exp_logits.iter().map(|&x| x / sum_logits).collect();
 
+            // We discard chunks with neutral probability for max pooling
             let refute_prob = softmax_probs[0];
             let support_prob = softmax_probs[1];
 
             let chunk_signal = refute_prob.max(support_prob);
 
-            // Keep only the highest signal chunk
+            // Keep only the highest signal chunk for chunk-level max pooling
             if chunk_signal > max_signal {
                 max_signal = chunk_signal;
                 best_support = support_prob;
@@ -210,6 +216,7 @@ async fn verify_claim(
         let stance;
         let confidence;
 
+        // If confidence is lower than 0.50 for the document we assume stance as neutral since the cross-encoder uncertainty
         if best_support > best_refute && best_support > 0.50 {
             stance = "SUPPORT".to_string();
             confidence = best_support;
@@ -221,10 +228,10 @@ async fn verify_claim(
             confidence = 1.0 - best_support - best_refute;
         }
 
-        // Document-level thresholded weighted sum pooling
+        // Perform document-level thresholded weighted sum pooling
         let weighted_confidence = confidence * _score;
 
-        // Apply a strict 0.80 logic threshold
+        // Only include documents with confidence > 0.80 for the weighted thresholded sum pooling
         if confidence > 0.80 {
             if stance == "SUPPORT" {
                 weighted_support_sum += weighted_confidence;
@@ -257,8 +264,7 @@ async fn verify_claim(
     if weighted_support_sum > weighted_refute_sum && weighted_support_sum > 0.0 {
         final_verdict = "TRUE".to_string();
 
-        // Normalize the confidence for the frontend display (optional, keeps it between 0 and 1)
-        // Since it's a sum, it could exceed 1.0. We divide by the total sum to get a percentage.
+        // Normalize the confidence
         let total_sum = weighted_support_sum + weighted_refute_sum;
         aggregate_confidence = weighted_support_sum / total_sum;
 
@@ -284,10 +290,10 @@ async fn verify_claim(
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    // 1. Initialize ONNX runtime engine
+    // Initialize ONNX runtime engine
     ort::init().with_name("verity_inference_engine").commit();
 
-    // 2. Initialize Qdrant Client (Connecting over the Docker network)
+    // Initialize Qdrant Client (Connecting over the Docker network)
     let qdrant_url = env::var("QDRANT_URL").unwrap_or_else(|_| "http://qdrant:6334".to_string());
 
     println!("\nBackend connecting to Qdrant at {}...", qdrant_url);
@@ -307,9 +313,9 @@ async fn main() -> std::io::Result<()> {
 
     println!("Started Verity Rust API on 0.0.0.0:8080...");
 
-    // 5. Start the HTTP Server
+    // Start the HTTP Server
     HttpServer::new(move || {
-        // 4. Wrap client in Actix web::Data for thread-safe sharing
+        // Wrap client in Actix web::Data for thread-safe sharing
         let app_state = web::Data::new(AppState {
             qdrant_client: client.clone(),
             bi_encoder_model: Mutex::new(Session::builder().unwrap().commit_from_file("models/bge_small/model.onnx").expect("Failed to load BGE-Small model")),
