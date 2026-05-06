@@ -149,6 +149,9 @@ async fn verify_claim(
     
     let mut evidence_list: Vec<Evidence> = Vec::new();
 
+    // Get a cross-encoder model from the pool asynchronously
+    let mut cross_encoder = data.cross_encoder_pool.get().await.expect("Failed to get Cross-Encoder from pool");
+
     for hit in response.iter() {
         let payload = &hit.payload;
 
@@ -204,24 +207,35 @@ async fn verify_claim(
 
             let shape = vec![1, input_ids.len() as i64];
 
-            // Get a cross-encoder model from the pool asynchronously
-            let mut cross_encoder = data.cross_encoder_pool.get().await.expect("Failed to get Cross-Encoder from pool");
-
             // Offload the Cross-Encoder inference to a blocking thread
-            let logits_result = web::block(move || -> Result<Vec<f32>, ort::Error> {
-                let outputs = cross_encoder.run(ort::inputs![
-                    "input_ids" => Tensor::from_array((shape.clone(), input_ids)).unwrap(),
-                    "attention_mask" => Tensor::from_array((shape.clone(), attention_mask)).unwrap(),
-                    "token_type_ids" => Tensor::from_array((shape.clone(), token_type_ids)).unwrap(),
-                ])?;
-                
-                let (_shape, logits_data) = outputs["logits"].try_extract_tensor::<f32>()?;
-                
-                // Return an owned Vector of the 3 logits [refute, support, neutral]
-                Ok(logits_data[0..3].to_vec())
+            // We pass the model in and get it back out so we can reuse it in the next iteration
+            let (logits_result, returned_encoder) = web::block(move || {
+                let logits_res = {
+                    let result = cross_encoder.run(ort::inputs![
+                        "input_ids" => Tensor::from_array((shape.clone(), input_ids)).unwrap(),
+                        "attention_mask" => Tensor::from_array((shape.clone(), attention_mask)).unwrap(),
+                        "token_type_ids" => Tensor::from_array((shape.clone(), token_type_ids)).unwrap(),
+                    ]);
+                    
+                    match result {
+                        Ok(outputs) => {
+                            match outputs["logits"].try_extract_tensor::<f32>() {
+                               Ok((_shape, logits_data)) => Ok(logits_data[0..3].to_vec()),
+                               Err(e) => Err(ort::Error::from(e)),
+                            }
+                        },
+                        Err(e) => Err(e)
+                    }
+                };
+
+                // Return both the result and the model so we can use the model in the next iteration
+                (logits_res, cross_encoder)
             })
             .await
             .expect("Cross-Encoder blocking task panicked");
+        
+            // Update the cross_encoder for the next iteration
+            cross_encoder = returned_encoder;
 
             let logits = match logits_result {
                 Ok(l) => l, 
