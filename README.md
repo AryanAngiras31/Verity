@@ -2,6 +2,8 @@
 
 A high-performance scientific fact-checking engine that verifies claims against peer-reviewed literature using a Retrieval Augmented Natural Language Inference (NLI) pipeline.
 
+**🌐 Live Demo:** [https://verity-puce.vercel.app/](https://verity-puce.vercel.app/)
+
 ## Overview
 
 Verity is a full-stack application that combines dense vector retrieval with cross-encoder re-ranking to verify scientific and medical claims. It processes claims through a Rust-powered backend API, retrieves relevant documents from a Qdrant vector database, and analyzes evidence stance using ONNX-optimized transformer models.
@@ -146,8 +148,7 @@ Verity relies on a custom "Hybrid Corpus" to ensure robust, real-world fact-chec
 * **BioLaySumm & LaySumm:** Biomedical lay summaries integrated to increase vocabulary diversity and domain variability.
 
 ## License
-
-MIT License - See LICENSE for details
+This project is licensed under the [MIT License](./LICENCE.txt).
 
 ## Acknowledgments
 
