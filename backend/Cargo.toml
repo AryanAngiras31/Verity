@@ -30,3 +30,6 @@ ndarray = "0.15.6"
 # Error handling and environment variables
 anyhow = "1.0"
 dotenvy = "0.15"
+
+# Connection pooling
+deadpool = { version = "0.12", features = ["managed"] }

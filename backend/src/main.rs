@@ -1,7 +1,6 @@
 mod types;
 use types::{VerifyRequest, VerifyResponse, Evidence};
 
-use std::sync::Mutex;
 use std::env;
 
 use actix_web::{post, web, App, HttpServer, Responder, HttpResponse};
@@ -13,12 +12,53 @@ use ort::session::Session;
 use ort::value::Tensor;
 use tokenizers::Tokenizer;
 
+use deadpool::managed::{Manager, RecycleResult};
+
+
+// Bi-Encoder pool manager
+struct BiEncoderManager;
+
+impl Manager for BiEncoderManager {
+    type Type = Session;
+    type Error = ort::Error;
+
+    async fn create(&self) -> Result<Self::Type, Self::Error> {
+        Session::builder()?
+            .commit_from_file("models/bge_small/model.onnx")
+    }
+
+    async fn recycle(&self, _obj: &mut Self::Type, _: &deadpool::managed::Metrics) -> RecycleResult<Self::Error> {
+        Ok(())
+    }
+}
+
+// Cross-Encoder pool manager
+struct CrossEncoderManager;
+
+impl Manager for CrossEncoderManager {
+    type Type = Session;
+    type Error = ort::Error;
+
+    async fn create(&self) -> Result<Self::Type, Self::Error> {
+        Session::builder()?
+            .commit_from_file("models/pubmedbert/model.onnx")
+    }
+
+    async fn recycle(&self, _obj: &mut Self::Type, _: &deadpool::managed::Metrics) -> RecycleResult<Self::Error> {
+        Ok(())
+    }
+}
+
+// Define the Pool types for convenience
+type BiEncoderPool = deadpool::managed::Pool<BiEncoderManager>;
+type CrossEncoderPool = deadpool::managed::Pool<CrossEncoderManager>;
+
 // This struct holds our shared application state
 struct AppState {
     qdrant_client: Qdrant,
-    bi_encoder_model: Mutex<Session>,
+    bi_encoder_pool: BiEncoderPool,
     bi_encoder_tokenizer: Tokenizer,
-    cross_encoder_model: Mutex<Session>,
+    cross_encoder_pool: CrossEncoderPool,
     cross_encoder_tokenizer: Tokenizer,
 }
 
@@ -54,27 +94,25 @@ async fn verify_claim(
     let seq_len: usize = input_ids.len();   // This is the number of tokens in the sequence
     let shape = vec![batch_size, seq_len];  // Pass a standard Rust Tuple (Shape, Data) directly to ONNX.
 
-    // Use a scoping block to automatically drop the pointer from output to the Bi-Encoder and the Mutex lock after the embedding is extracted
-    let embedding: Vec<f32> = {
-        // Get the Mutex lock to get safe, mutable access to the model
-        let mut bi_encoder = data.bi_encoder_model.lock().expect("Could not get Mutex lock for the Bi-Encoder model");
+    // Get the Bi-Encoder from the pool asynchronously
+    let mut bi_encoder = data.bi_encoder_pool.get().await.expect("Failed to get Bi-Encoder from pool");
 
-        // Run the BGE small model
+    // Run the Bi-Encoder inference in a blocking thread
+    let embedding: Vec<f32> = web::block(move || {
         let outputs = bi_encoder.run(ort::inputs![
             "input_ids" => Tensor::from_array((shape.clone(), input_ids)).unwrap(),
             "attention_mask" => Tensor::from_array((shape.clone(), attention_mask)).unwrap(),
             "token_type_ids" => Tensor::from_array((shape.clone(), token_type_ids)).unwrap(),
         ]).expect("Failed to run the Bi-Encoder model");
 
-        // Extract the embedding
-        // BGE-Small uses the [CLS] token (the very first token at index 0) as the embedding for the whole sentence.
-        let (_shape, tensor_data) = outputs["last_hidden_state"]    // The output is a tensor of shape [batch_size, sequence_length, hidden_dimension]
+        let (_shape, tensor_data) = outputs["last_hidden_state"]
             .try_extract_tensor::<f32>()
             .expect("Failed to extract float tensor from ONNX output");
 
-        // Because the tensor is flattened, the first token's 384 dimensions are simply the first 384 numbers in the array. Return them.
         tensor_data[0..384].to_vec()
-    };
+    })
+    .await
+    .expect("Blocking task for Bi-Encoder failed");
 
     // Extract the dynamic threshold from the request (default to 0.55)
     let threshold: f32 = req_body.qdrant_threshold.unwrap_or(0.55);
@@ -103,16 +141,13 @@ async fn verify_claim(
     let top_result = response.result.first().map(|hit| hit.score).unwrap_or(0.0);
     let response = response.result.into_iter().filter(|hit| hit.score >= top_result - radius).collect::<Vec<_>>();
 
-    // Cross Encoder Inference
-    let mut evidence_list: Vec<Evidence> = Vec::new();
-
-    // Get the Mutex lock for the Cross Encoder model
-    let mut cross_encoder = data.cross_encoder_model.lock().expect("Could not get Mutex lock for the Cross Encoder model");
-
+    
     // Trackers for document-level thresholded weighted sum pooling
     let mut weighted_support_sum: f32 = 0.0;
     let mut weighted_refute_sum: f32 = 0.0;
     let mut highest_neutral_score: f32 = 0.0;
+    
+    let mut evidence_list: Vec<Evidence> = Vec::new();
 
     for hit in response.iter() {
         let payload = &hit.payload;
@@ -169,30 +204,32 @@ async fn verify_claim(
 
             let shape = vec![1, input_ids.len() as i64];
 
-            // Get logits for the chunk
-            let cross_encoder_result = cross_encoder.run(ort::inputs![
-                "input_ids" => Tensor::from_array((shape.clone(), input_ids)).unwrap(),
-                "attention_mask" => Tensor::from_array((shape.clone(), attention_mask)).unwrap(),
-                "token_type_ids" => Tensor::from_array((shape.clone(), token_type_ids)).unwrap(),
-            ]);
+            // Get a cross-encoder model from the pool asynchronously
+            let mut cross_encoder = data.cross_encoder_pool.get().await.expect("Failed to get Cross-Encoder from pool");
 
-            let outputs = match cross_encoder_result {
-                Ok(outputs) => outputs,
+            // Offload the Cross-Encoder inference to a blocking thread
+            let logits_result = web::block(move || -> Result<Vec<f32>, ort::Error> {
+                let outputs = cross_encoder.run(ort::inputs![
+                    "input_ids" => Tensor::from_array((shape.clone(), input_ids)).unwrap(),
+                    "attention_mask" => Tensor::from_array((shape.clone(), attention_mask)).unwrap(),
+                    "token_type_ids" => Tensor::from_array((shape.clone(), token_type_ids)).unwrap(),
+                ])?;
+                
+                let (_shape, logits_data) = outputs["logits"].try_extract_tensor::<f32>()?;
+                
+                // Return an owned Vector of the 3 logits [refute, support, neutral]
+                Ok(logits_data[0..3].to_vec())
+            })
+            .await
+            .expect("Cross-Encoder blocking task panicked");
+
+            let logits = match logits_result {
+                Ok(l) => l, 
                 Err(e) => {
-                    println!("Warning: Skipping chunk. ONNX inference failed (likely exceeded 512 tokens). Length: {}, Error: {:?}", seq_len, e);
+                    println!("Warning: Skipping chunk. ONNX inference failed. Error: {:?}", e);
                     continue;
                 }
             };
-
-            let (_shape, logits_data) = match outputs["logits"].try_extract_tensor::<f32>() {
-                Ok((shape, logits_data)) => (shape, logits_data),
-                Err(e) => {
-                    println!("Warning: Failed to extract tensor, Error: {:?}", e);
-                    continue;
-                }
-            };
-            // The logits are in the order: [refute, support, neutral]. 
-            let logits = &logits_data[0..3];
 
             let max_logit: f32 = logits[0].max(logits[1].max(logits[2]));
             let exp_logits: Vec<f32> = logits.iter().map(|&x| (x-max_logit).exp()).collect();
@@ -254,8 +291,6 @@ async fn verify_claim(
         });
     }
 
-    drop(cross_encoder);
-
     // Map output to match the True/False expectation for your benchmark script
     let mut final_verdict = "NEUTRAL".to_string();
     let aggregate_confidence;
@@ -311,19 +346,32 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
+    // Configure the model pools
+    let pool_size = 2;
+
+    let bi_encoder_pool = deadpool::managed::Pool::builder(BiEncoderManager)
+        .max_size(pool_size)
+        .build()
+        .expect("Failed to create Bi-Encoder pool");
+
+    let cross_encoder_pool = deadpool::managed::Pool::builder(CrossEncoderManager)
+        .max_size(pool_size)
+        .build()
+        .expect("Failed to create Cross-Encoder pool");
+
+    // Create app state 
+    let app_state = web::Data::new(AppState {
+        qdrant_client: client,
+        bi_encoder_pool,
+        bi_encoder_tokenizer: Tokenizer::from_file("models/bge_small/tokenizer.json").unwrap(),
+        cross_encoder_pool,
+        cross_encoder_tokenizer: Tokenizer::from_file("models/pubmedbert/tokenizer.json").unwrap(),
+    });
+
     println!("Started Verity Rust API on 0.0.0.0:8080...");
 
     // Start the HTTP Server
     HttpServer::new(move || {
-        // Wrap client in Actix web::Data for thread-safe sharing
-        let app_state = web::Data::new(AppState {
-            qdrant_client: client.clone(),
-            bi_encoder_model: Mutex::new(Session::builder().unwrap().commit_from_file("models/bge_small/model.onnx").expect("Failed to load BGE-Small model")),
-            bi_encoder_tokenizer: Tokenizer::from_file("models/bge_small/tokenizer.json").expect("Failed to load BGE-Small tokenizer"),
-            cross_encoder_model: Mutex::new(Session::builder().unwrap().commit_from_file("models/pubmedbert/model.onnx").expect("Failed to load the PubMedBERT model")),
-            cross_encoder_tokenizer: Tokenizer::from_file("models/pubmedbert/tokenizer.json").expect("Failed to load the PubMedBERT tokenizer"),
-        });
-
         App::new()
             .app_data(app_state.clone())
             .service(verify_claim)
