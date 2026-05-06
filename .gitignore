@@ -60,3 +60,7 @@ logs/
 # --- Specific Dataset folders (if downloaded locally) ---
 /data/scifact/
 /data/healthver/
+
+# Load test
+load_test.py
+load_test_results.md

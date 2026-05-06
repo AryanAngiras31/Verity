@@ -156,7 +156,7 @@ def run_benchmark(dataset_path, threshold, limit=50):
     return weighted_f1
 
 
-def hyperparameter_tuning(dataset_path, thresholds_to_test, limit=50):
+def hyperparameter_tuning(dataset_path, thresholds_to_test, limit=1000):
     """Sweeps multiple thresholds to find the mathematical 'sweet spot'."""
     print(
         f"\nStarting Hyperparameter Tuning on {len(thresholds_to_test)} thresholds..."
@@ -186,7 +186,7 @@ def hyperparameter_tuning(dataset_path, thresholds_to_test, limit=50):
 if __name__ == "__main__":
     DATASET_FILE = "data/hybrid_claims_consolidated.jsonl"
     # We will test 5 different strictness levels for the Qdrant Bouncer
-    thresholds = [0.60, 0.65, 0.70, 0.75]
+    thresholds = [0.55, 0.60, 0.65, 0.70, 0.75]
 
     # I set the limit to 50 so your first test finishes in ~10 seconds.
     # Once you confirm it works, change limit to 500 to evaluate the whole corpus!
