@@ -296,10 +296,23 @@ async fn verify_claim(
             highest_neutral_score = confidence;
         }
 
+        // Find the byte index of the 200th character, or the end of the string
+        let end_index = abstract_text
+            .char_indices()
+            .map(|(i, _)| i)
+            .nth(200) 
+            .unwrap_or(abstract_text.len());
+        
+        let snippet = if abstract_text.len() > end_index {
+            format!("{}...", &abstract_text[..end_index])
+        } else {
+            abstract_text.to_string()
+        };
+
         evidence_list.push(types::Evidence {
             title: title.to_string(),
             source: source.to_string(),
-            snippet: format!("{}...", &abstract_text[..200.min(abstract_text.len())]),
+            snippet,
             stance,
             confidence,
         });

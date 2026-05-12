@@ -190,4 +190,4 @@ if __name__ == "__main__":
 
     # I set the limit to 50 so your first test finishes in ~10 seconds.
     # Once you confirm it works, change limit to 500 to evaluate the whole corpus!
-    hyperparameter_tuning(DATASET_FILE, thresholds, limit=50)
+    hyperparameter_tuning(DATASET_FILE, thresholds, limit=500)
