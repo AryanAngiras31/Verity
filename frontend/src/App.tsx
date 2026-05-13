@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import logo from "./assets/logo.png";
 
-// The actual steps your Rust backend performs
 const LOADING_STEPS = [
   "Embedding claim...",
   "Querying the database...",
@@ -36,7 +35,6 @@ export default function App() {
     clearError,
   } = useVerityStore();
 
-  // Cycle through loading messages every 2 seconds while fetching
   useEffect(() => {
     let interval: number;
     if (isLoading) {
@@ -53,6 +51,13 @@ export default function App() {
     e.preventDefault();
     if (!inputValue.trim() || inputValue.length > 250) return;
     verifyClaim(inputValue);
+    
+    // Smooth scroll down to evidence section on mobile devices
+    if (window.innerWidth < 1024) {
+      setTimeout(() => {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+      }, 100);
+    }
   };
 
   const setExample = (text: string) => {
@@ -60,14 +65,16 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen w-full bg-background overflow-hidden font-sans">
+    // ROOT CONTAINER: Native scroll on mobile, locked dual-pane on desktop
+    <div className="flex flex-col lg:flex-row min-h-screen lg:h-screen w-full bg-background font-sans lg:overflow-hidden">
+      
       {/* LEFT PANE: Input and Verdict */}
-      <div className="w-[450px] min-w-[450px] h-full flex flex-col border-r border-border bg-background shadow-sm z-10">
-        <header className="h-24 p-6 border-b border-border flex items-center gap-3 shrink-0">
+      <div className="w-full lg:w-[450px] lg:min-w-[450px] flex flex-col shrink-0 border-b lg:border-b-0 lg:border-r border-border bg-background shadow-sm z-10 lg:h-full">
+        <header className="h-auto lg:h-24 p-6 border-b border-border flex items-center gap-3 shrink-0">
           <img
             src={logo}
             alt="Verity Logo"
-            className="w-11 h-11 rounded-full object-cover shadow-sm border border-border/50"
+            className="w-11 h-11 rounded-full object-cover shadow-sm border border-border/50 shrink-0"
           />
           <div>
             <h1 className="text-xl font-semibold leading-tight text-foreground">
@@ -79,7 +86,8 @@ export default function App() {
           </div>
         </header>
 
-        <div className="flex-1 p-6 overflow-y-auto">
+        {/* Verdict Box Area */}
+        <div className="p-6 lg:flex-1 lg:overflow-y-auto">
           <div className="bg-card border border-border rounded-xl p-8 flex flex-col items-center justify-center text-center min-h-[250px]">
             {isLoading ? (
               <div className="animate-pulse flex flex-col items-center">
@@ -124,7 +132,8 @@ export default function App() {
           </div>
         </div>
 
-        <div className="p-6 border-t border-border bg-background">
+        {/* Input Form Area */}
+        <div className="p-6 border-t border-border bg-background shrink-0">
           <form onSubmit={handleVerify} className="flex flex-col gap-4">
             <div className="relative">
               <textarea
@@ -133,9 +142,8 @@ export default function App() {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 disabled={isLoading}
-                maxLength={250} // Hard limit at the browser level
+                maxLength={250} 
               />
-              {/* Character Counter */}
               <div 
                 className={`absolute bottom-3 right-3 text-[10px] font-mono font-bold transition-colors ${
                   inputValue.length >= 250 ? "text-[hsl(var(--stance-refute))]" : "text-muted-foreground/60"
@@ -146,7 +154,7 @@ export default function App() {
             </div>
             <button
               type="submit"
-              disabled={isLoading || !inputValue.trim()}
+              disabled={isLoading || !inputValue.trim() || inputValue.length > 250}
               className="w-full bg-primary text-foreground hover:opacity-85 transition-opacity font-semibold rounded-xl py-3 flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {isLoading ? "Analyzing..." : "Verify Claim"}
@@ -161,21 +169,21 @@ export default function App() {
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() =>
-                  setExample("Mitochondria play a major role in apoptosis.")
+                  setExample("Chronic sleep deprivation has a significant negative impact on memory consolidation and cognitive functions")
                 }
                 className="text-xs bg-muted hover:bg-border text-muted-foreground px-3 py-1.5 rounded-full transition-colors text-left line-clamp-1"
-              >
-                Mitochondria play a major role in apoptosis.
+              > 
+                Chronic sleep deprivation has a significant negative impact on memo...
               </button>
               <button
                 onClick={() =>
                   setExample(
-                    "Medications to treat obesity do not have unwanted side effects.",
+                    "Applying sunscreen to your skin helps block ultraviolet radiation and lowers the risk of skin cancer.",
                   )
                 }
                 className="text-xs bg-muted hover:bg-border text-muted-foreground px-3 py-1.5 rounded-full transition-colors text-left line-clamp-1"
               >
-                Medications to treat obesity do not have unwanted side effects.
+                Applying sunscreen to your skin helps block ultraviolet radiation and...
               </button>
             </div>
           </div>
@@ -183,37 +191,37 @@ export default function App() {
       </div>
 
       {/* RIGHT PANE: Evidence Ledger */}
-      <div className="flex-1 h-full bg-background flex flex-col overflow-hidden relative">
-        <header className="h-24 p-6 border-b border-border bg-background shrink-0">
+      <div className="flex-1 w-full flex flex-col bg-background relative lg:h-full lg:overflow-hidden">
+        <header className="h-auto lg:h-24 p-6 border-b border-border bg-background shrink-0 flex flex-col justify-center">
           <h2 className="text-lg font-semibold">Evidence Ledger</h2>
-          <div className="text-sm text-muted-foreground h-5">
-            {currentClaim && (
-              <p className="flex items-center gap-1.5">
+          <div className="text-sm text-muted-foreground mt-1 w-full flex overflow-hidden">
+            {currentClaim ? (
+              <p className="flex items-center gap-1.5 w-full">
                 <span className="shrink-0">Analyzing:</span>
-                {/* Subtle Pulse Animation and Truncation on the claim text */}
                 <span
                   className={`italic font-medium text-foreground truncate ${isLoading ? "animate-pulse" : ""}`}
-                  title={currentClaim} // Shows the full claim on hover!
+                  title={currentClaim} 
                 >
                   "{currentClaim.length > 200 ? `${currentClaim.slice(0, 200)}...` : currentClaim}"
                 </span>
               </p>
+            ) : (
+              <p>Submit a claim to view evidence</p>
             )}
-            {!currentClaim && <p>Submit a claim to view evidence</p>}
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-6 bg-background">
+        {/* Evidence Grid Area */}
+        <div className="p-6 lg:flex-1 lg:overflow-y-auto bg-background">
           {isLoading ? (
-            <div className="h-full flex flex-col items-center justify-center text-muted-foreground animate-in fade-in duration-700 bg-background">
+            <div className="h-full min-h-[300px] flex flex-col items-center justify-center text-muted-foreground animate-in fade-in duration-700">
               <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-6"></div>
-              {/* Cycling Technical Tasks */}
               <p className="text-sm font-medium opacity-80 animate-pulse text-muted-foreground">
                 {LOADING_STEPS[messageIndex]}
               </p>
             </div>
           ) : evidence.length > 0 ? (
-            <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-6 animate-in slide-in-from-bottom-4 duration-500">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 animate-in slide-in-from-bottom-4 duration-500">
               {evidence.map((item, idx) => (
                 <div
                   key={idx}
@@ -271,7 +279,7 @@ export default function App() {
               ))}
             </div>
           ) : (
-            <div className="h-full flex flex-col items-center justify-center text-center max-w-sm mx-auto opacity-60 bg-background">
+            <div className="h-full min-h-[300px] flex flex-col items-center justify-center text-center max-w-sm mx-auto opacity-60">
               <div className="w-16 h-16 bg-muted rounded-2xl flex items-center justify-center mb-6">
                 <FileText className="w-8 h-8" />
               </div>
@@ -283,9 +291,11 @@ export default function App() {
             </div>
           )}
         </div>
+        
+        {/* Error Modal - Fixed on mobile to stay centered when scrolling */}
         {error && (
-          <div className="absolute top-[55%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg px-4 animate-in fade-in zoom-in-95 duration-200">
-            <div className="bg-card/95 backdrop-blur-md border border-red-500/50 shadow-2xl rounded-2xl p-6 py-8 min-h-[180px] flex items-start gap-4">
+          <div className="fixed lg:absolute top-[50%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 w-[90%] max-w-lg animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-card/95 backdrop-blur-md border border-red-500/50 shadow-2xl rounded-2xl p-6 py-8 flex items-start gap-4">
               <XCircle className="w-6 h-6 text-red-500 shrink-0 mt-0.5" />
               <div className="flex-1">
                 <h3 className="text-base font-semibold text-foreground mb-1.5">
