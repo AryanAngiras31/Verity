@@ -193,10 +193,10 @@ export default function App() {
       {/* RIGHT PANE: Evidence Ledger */}
       <div className="flex-1 w-full flex flex-col bg-background relative lg:h-full lg:overflow-hidden">
         <header className="h-auto lg:h-24 p-6 border-b border-border bg-background shrink-0 flex flex-col justify-center">
-          <h2 className="text-lg font-semibold">Evidence Ledger</h2>
-          <div className="text-sm text-muted-foreground mt-1 w-full flex overflow-hidden">
+          <h2 className="text-lg font-semibold leading-tight">Evidence Ledger</h2>
+          <div className="text-sm text-muted-foreground w-full flex">
             {currentClaim ? (
-              <p className="flex items-center gap-1.5 w-full">
+              <p className="flex items-center gap-1.5 w-full min-w-0">
                 <span className="shrink-0">Analyzing:</span>
                 <span
                   className={`italic font-medium text-foreground truncate ${isLoading ? "animate-pulse" : ""}`}
