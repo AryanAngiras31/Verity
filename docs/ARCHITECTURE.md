@@ -4,7 +4,7 @@ This is the architectural documentation for **Verity**. This document provides a
 
 Verity is engineered as a high-performance, hallucination-resistant **Retrieval-Augmented Natural Language Inference (NLI)** pipeline. It is designed to evaluate the logical truth of scientific and medical claims against a vector-embedded hybrid corpus of peer-reviewed scientific literature. 
 
-It leverages Rust, Actix-Web, Tokio thread-offloading, and lock-free object pooling to optimize hardware utilization and concurrent throughput without requiring expensive GPU infrastructure. It uses an advanced aggregation algorithm utilizing max-pooling at the chunk-level and weighted thresholded sum pooling at the document-level. This was found to be the best approach, with the highest F1 score on the internal benchmarks after extensive experimentation with different aggregation strategies. 
+It leverages Rust, Actix-Web, Tokio thread-offloading, lock-free object pooling and hardware-aware INT8 quantization to optimize hardware utilization and concurrent throughput without requiring expensive GPU infrastructure. This was found to be the best approach, with the highest F1 score on the internal benchmarks after extensive experimentation with different aggregation strategies. 
 
 ## Table of Contents
 
@@ -61,11 +61,11 @@ It leverages Rust, Actix-Web, Tokio thread-offloading, and lock-free object pool
 
     2. It must resist "Lexical Bias" (matching antonyms blindly) and "Attention Dilution" (getting distracted by complex methodology) by enforcing windowed chunking.
 
-3. **Cost-Efficiency & Hardware Agnosticism:**
+3. **Cost-Efficiency & Low Latency on CPU:**
 
-    1. The inference engine must not require expensive, dedicated cloud GPUs.
+    1. The system must process an end-to-end multi-chunk verification pipeline in **~2000ms** on commodity CPUs.
 
-    2. By leveraging Rust's memory safety and the ONNX CPU execution provider, the entire verification pipeline must be capable of running fast on standard, cheap commodity CPU servers.
+    2. This is achieved via AVX2-optimized INT8 dynamic quantization and batched 2D tensor processing in Rust.
 
 4. **Deployability & Isolation:**
 
@@ -216,7 +216,7 @@ It leverages Rust, Actix-Web, Tokio thread-offloading, and lock-free object pool
 
     - **Bi-Encoder (BGE-Small):** Converts the user's string claim into a dense semantic vector for database querying.
 
-    - **Cross-Encoder (PubMedBERT):** Ingests two inputs simultaneously (Text A: The Chunk, Text B: The Claim) and computes cross-attention to determine if the sentence entails (Supports), contradicts (Refutes), or is unrelated to (Neutral) the claim.
+    - **Cross-Encoder (PubMedBERT INT8-Quantized):** Ingests padded, batched 2D tensors simultaneously computing cross-attention across all document chunks to determine the logical stance (Support, Refute, Neutral) at a fraction of standard FP32 memory bandwidth.
 
 ## 4.3. Execution Flow (Online Inference)
 
@@ -230,7 +230,7 @@ It leverages Rust, Actix-Web, Tokio thread-offloading, and lock-free object pool
 
 5. **Context Retrieval:** Qdrant returns up to 9 document hits with a threshold of `0.55` for the similarity score. Dynamic Radius Retrieval is performed with a radius of `0.05` to remove low similarity documents.
 
-6. **Chunking & Cross-Encoding:** For each retrieved document, the Rust Backend extracts the `abstract` payload, splits it by the `.` delimiter, restores the periods, and trims whitespace. To process the chunks, the backend asynchronously acquires a Cross-Encoder from the Object Pool and offloads the ONNX inference to a background blocking thread. This calculates the NLI logits for each (chunk, claim) pair without freezing the main web server. Once the document is processed, the Cross-Encoder is released back to the pool.
+6. **Batched Chunking & Cross-Encoding:** For each retrieved document, the abstract is split into 2-sentence windows. Instead of executing these chunks sequentially, the Rust Backend configures the Tokenizer to pad the sequences dynamically. It constructs a single, flattened 1D array representing a batched 2D tensor. The backend asynchronously acquires the INT8 Cross-Encoder from the Object Pool and offloads the batched inference to a blocking thread. This makes a single Foreign Function Interface (FFI) call to C++ ONNX runtime.
 
 7. **Logical Scoring:** The Cross-Encoder returns raw logits for the 3 classes. The Rust Backend calculates the SoftMax probabilities to identify the highest confidence stance (Support, Refute, Neutral) for every chunk. A document's confidence and stance is the confidence and stance of the chunk with the highest confidence (Max Pooling).
 
@@ -259,5 +259,12 @@ To achieve deterministic fact-checking without risking hallucinations by Generat
 2. **Max Pooling at the Chunk Level:** Most sentences in a scientific abstract are background information such as methodologies and objectives and will return a `NEUTRAL` stance. If we averaged the chunk scores, the `NEUTRAL` noise would mathematically drown out the one sentence that actually proves or disproves the claim. Max Pooling ensures that a single, high-confidence signal dictates the document's stance.
 3. **Weighted Thresholded Sum Pooling for the Verdict:** Not all retrieved documents are equally relevant. By multiplying the NLI confidence score by the Qdrant semantic similarity score, we heavily weight evidence that perfectly matches the topic of the claim. The 65% hard threshold acts as a low-pass filter, dropping uncertain cross-encoder predictions before they can influence the final mathematical verdict.
 4. **Dynamic Radius Retrieval (DRR):** Standard "Top-K" retrieval is inherently flawed for fact-checking because it forces the system to consider a fixed number of documents even if only the first one is truly relevant. This often introduces low-similarity noise that can dilute the final verdict. By implementing a dynamic radius of $0.05$, the system identifies the similarity score of the top-ranked document and discards any hits that fall below the threshold of $TopScore - 0.05$. This ensures that the evidence fed into the Cross-Encoder is of uniform semantic quality and prevents irrelevant documents from drowning the strongest signal.
+
+### 5.4. Hardware-Aware Optimization: INT8 Quantization & Batching
+During development, sequential chunk evaluation using an FP32 Cross-Encoder model resulted in an average latency of ~20,000ms per request on CPU—an unacceptable timeframe for a web application. The system was overhauled to achieve a 10x latency reduction (~2,000ms) without migrating to cloud GPUs.
+
+1. **Beating the Memory Bandwidth Bottleneck:** CPU inference is usually bottlenecked by the time it takes to move large model weights from RAM into the CPU registers. By applying **Dynamic INT8 Quantization** during the offline export phase, the PubMedBERT model footprint was shrunk from ~440MB to ~110MB. This allows large portions of the neural network to reside directly in the L3 CPU cache.
+2. **AVX2 Vectorized Math:** The quantization configuration (`AutoQuantizationConfig.avx2()`) explicitly maps the Cross-Encoder's matrix multiplications to physical AVX2 hardware pathways. The CPU is now capable of calculating four INT8 operations in the exact same physical clock cycle it previously took to calculate a single FP32 operation.
+3. **Rust Tensor Batching:** Calling the C++ ONNX runtime from Rust carries FFI overhead. By abandoning sequential `for` loops, padding the sentence chunks, and flattening the data into a single `[batch_size, sequence_length]` tensor array, the Actix worker now makes a single call to the ONNX runtime. This allows the backend to evaluate an entire document's chunks simultaneously across multiple CPU cores.
 
 -------

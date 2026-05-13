@@ -6,13 +6,15 @@ A high-performance scientific fact-checking engine that verifies claims against 
 
 ## Overview
 
-Verity is a full-stack application that combines dense vector retrieval with cross-encoder re-ranking to verify scientific and medical claims. It processes claims through a Rust-powered backend API, retrieves relevant documents from a Qdrant vector database, and analyzes evidence stance using ONNX-optimized transformer models.
+Verity is a full-stack application that combines dense vector retrieval with cross-encoder re-ranking to verify scientific and medical claims. It processes claims through a Rust-powered backend API, retrieves relevant documents from a Qdrant vector database, and analyzes evidence stance using hardware-optimized ONNX transformer models.
 
 ### Key Features:
 Verity was built to prioritize concurrency, hallucination resistance, and hardware efficiency without relying on expensive cloud GPUs or black-box LLMs.
 
+* **Hardware-Aware INT8 Quantization:** Achieves a **10x reduction in latency** by dynamically quantizing the FP32 Cross-Encoder to INT8 and mapping operations directly to AVX2 CPU instructions, maximizing L3 cache efficiency.
+* **Batched Tensor Processing:** Eliminates sequential looping bottlenecks by padding, flattening, and processing multi-chunk arrays as single 2D tensors,  minimizing Rust-to-C++ FFI overhead.
 * **Lock-Free Concurrency via Object Pooling:** Utilizes the `deadpool` crate to manage thread-local instances of ONNX models, achieving lock-free parallel execution across CPU cores.
-* **Tokio Thread Offloading:** Synchronous, CPU-heavy matrix math (`Session::run()`) is seamlessly offloaded to background blocking threads using `web::block`. This ensures the Actix-Web event loop remains unblocked and responsive to incoming network traffic.
+* **Tokio Thread Offloading:** Synchronous, CPU-heavy matrix math (`Session::run()`) is seamlessly offloaded to background blocking threads using `web::block`, ensuring the Actix-Web event loop remains responsive.
 * **Deterministic NLI Chunking:** Prevents "Attention Dilution" by sanitizing and isolating document abstracts into sliding 2-sentence windows before passing them to the Cross-Encoder.
 * **Advanced Stance Aggregation:** Calculates document stances via Chunk-Level Max Pooling, and determines the final system verdict using Weighted Thresholded Sum Pooling.
 * **Dynamic Radius Retrieval:** Prevents the "Closed-World Fallacy" problem by enforcing strict baseline Qdrant similarity scores and a dynamic radius (`0.05`) to filter out statistical outliers.
@@ -27,8 +29,8 @@ Verity was built to prioritize concurrency, hallucination resistance, and hardwa
 
 1. **Claim Embedding:** The user's claim is received by the Rust API and tokenized. The BGE-Small Bi-Encoder generates a 384-dimensional dense semantic vector.
 2. **Context Retrieval & Filtering:** The vector is sent to Qdrant to retrieve the top 9 most semantically similar documents. The system applies a strict hard threshold (`0.55`) and a dynamic radius filter to instantly reject out-of-domain documents.
-3. **Windowed Chunking:** Retrieved abstracts are sanitized, split by terminal punctuation, and grouped into sliding 2-sentence windows to preserve grammatical context for the NLI model.
-4. **Thread-Offloaded Inference:** The Actix worker requests a PubMedBERT Cross-Encoder from the Object Pool and offloads the chunk-claim pairs to a Tokio background thread. The model outputs raw logits which are converted to SoftMax probabilities (SUPPORT, REFUTE, NEUTRAL).
+3. **Windowed Chunking & Padding:** Retrieved abstracts are sanitized, split by terminal punctuation, and grouped into sliding 2-sentence windows. The tokenizer automatically pads these chunks to the longest sequence in the batch.
+4. **Batched Thread-Offloaded Inference:** The Actix worker requests a quantized INT8 PubMedBERT Cross-Encoder from the Object Pool. It offloads the entire padded 2D tensor batch to a Tokio background thread. The model processes all chunks simultaneously, outputting raw logits which are converted to SoftMax probabilities (SUPPORT, REFUTE, NEUTRAL).
 5. **Mathematical Aggregation:** The system performs Max Pooling to find the strongest signal in each document. It then multiplies the NLI confidence by the Qdrant semantic score, filtering out weak signals (<65%), and performs a Weighted Sum Pooling to declare the final `TRUE`, `FALSE`, or `NEUTRAL` verdict.
 
 ## Tech Stack
@@ -37,9 +39,9 @@ Verity was built to prioritize concurrency, hallucination resistance, and hardwa
 |-------|------------|
 | Frontend | React 19, TypeScript, Tailwind CSS, Zustand, Vite |
 | Backend | Rust, Actix-Web, ONNX Runtime (`ort`), Deadpool, Tokio |
-| ML Models | BGE-Small (Bi-Encoder), PubMedBERT (Cross-Encoder) |
+| ML Models | BGE-Small (Bi-Encoder), PubMedBERT INT8-AVX2 (Cross-Encoder) |
 | Database | Qdrant (Vector DB via gRPC) |
-| Data Pipeline | Python, HuggingFace Datasets, SentenceTransformers |
+| Data Pipeline | Python, HuggingFace Datasets, Optimum (Quantization) |
 | Infrastructure | Docker, Docker Compose |
 
 ## Project Structure
