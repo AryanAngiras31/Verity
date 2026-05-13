@@ -42,7 +42,7 @@ export default function App() {
     if (isLoading) {
       interval = window.setInterval(() => {
         setMessageIndex((prev) => (prev + 1) % LOADING_STEPS.length);
-      }, 4000);
+      }, 1000);
     } else {
       setMessageIndex(0);
     }
@@ -51,7 +51,7 @@ export default function App() {
 
   const handleVerify = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || inputValue.length > 250) return;
     verifyClaim(inputValue);
   };
 
@@ -126,13 +126,24 @@ export default function App() {
 
         <div className="p-6 border-t border-border bg-background">
           <form onSubmit={handleVerify} className="flex flex-col gap-4">
-            <textarea
-              className="w-full h-24 p-3 bg-background border border-border rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
-              placeholder="Enter a scientific or medical claim to verify..."
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              disabled={isLoading}
-            />
+            <div className="relative">
+              <textarea
+                className="w-full h-24 p-3 pb-6 bg-background border border-border rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent text-sm"
+                placeholder="Enter a scientific or medical claim to verify..."
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                disabled={isLoading}
+                maxLength={250} // Hard limit at the browser level
+              />
+              {/* Character Counter */}
+              <div 
+                className={`absolute bottom-3 right-3 text-[10px] font-mono font-bold transition-colors ${
+                  inputValue.length >= 250 ? "text-[hsl(var(--stance-refute))]" : "text-muted-foreground/60"
+                }`}
+              >
+                {inputValue.length}/250
+              </div>
+            </div>
             <button
               type="submit"
               disabled={isLoading || !inputValue.trim()}
@@ -178,12 +189,13 @@ export default function App() {
           <div className="text-sm text-muted-foreground h-5">
             {currentClaim && (
               <p className="flex items-center gap-1.5">
-                <span>Analyzing:</span>
-                {/* Subtle Pulse Animation on the claim text */}
+                <span className="shrink-0">Analyzing:</span>
+                {/* Subtle Pulse Animation and Truncation on the claim text */}
                 <span
-                  className={`italic font-medium text-foreground ${isLoading ? "animate-pulse" : ""}`}
+                  className={`italic font-medium text-foreground truncate ${isLoading ? "animate-pulse" : ""}`}
+                  title={currentClaim} // Shows the full claim on hover!
                 >
-                  "{currentClaim}"
+                  "{currentClaim.length > 200 ? `${currentClaim.slice(0, 200)}...` : currentClaim}"
                 </span>
               </p>
             )}

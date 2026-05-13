@@ -71,6 +71,11 @@ async fn verify_claim(
 ) -> impl Responder {
     let claim: &str = &req_body.claim;
 
+    // 250 equates to 60-70 tokens and prevents Premise Length Dilution in the Cross-Encoder.
+    if claim.chars().count() > 250 {
+        return HttpResponse::BadRequest().body("Claim is too long. Please limit your claim to 250 characters.");
+    }
+
     println!("============================================================================================================");
     println!("Received claim: {}", claim);
     println!("============================================================================================================\n");
