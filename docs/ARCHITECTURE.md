@@ -214,9 +214,9 @@ It leverages Rust, Actix-Web, Tokio thread-offloading, and lock-free object pool
 
 - **Components:**
 
-    - **Bi-Encoder (BGE-Small / SPECTER 2):** Converts the user's string claim into a dense semantic vector for database querying.
+    - **Bi-Encoder (BGE-Small):** Converts the user's string claim into a dense semantic vector for database querying.
 
-    - **Cross-Encoder (DeBERTa-v3):** Ingests two inputs simultaneously (Text A: The Chunk, Text B: The Claim) and computes cross-attention to determine if the sentence entails (Supports), contradicts (Refutes), or is unrelated to (Neutral) the claim.
+    - **Cross-Encoder (PubMedBERT):** Ingests two inputs simultaneously (Text A: The Chunk, Text B: The Claim) and computes cross-attention to determine if the sentence entails (Supports), contradicts (Refutes), or is unrelated to (Neutral) the claim.
 
 ## 4.3. Execution Flow (Online Inference)
 
@@ -255,9 +255,9 @@ A challenge in this architecture was preventing the synchronous, CPU-bound matri
 ### 5.3. NLI Heuristics & Stance Aggregation
 To achieve deterministic fact-checking without risking hallucinations by Generative LLMs, a mathematical heuristic for evidence evaluation was engineered.
 
-1. **Windowed Chunking:** Transformer cross-encoders (like DeBERTa) suffer from "Attention Dilution" when fed massive blocks of text. By chunking abstracts into sliding 2-sentence windows, we force the model's self-attention heads to focus strictly on the direct relationship between the specific claim and the isolated fact.
-2. **Max Pooling at the Chunk Level** Most sentences in a scientific abstract are background information such as methodologies and objectives and will return a `NEUTRAL` stance. If we averaged the chunk scores, the `NEUTRAL` noise would mathematically drown out the one sentence that actually proves or disproves the claim. Max Pooling ensures that a single, high-confidence signal dictates the document's stance.
-3. **Weighted Thresholded Sum Pooling for the Verdict** Not all retrieved documents are equally relevant. By multiplying the NLI confidence score by the Qdrant semantic similarity score, we heavily weight evidence that perfectly matches the topic of the claim. The 65% hard threshold acts as a low-pass filter, dropping uncertain cross-encoder predictions before they can influence the final mathematical verdict.
-4. **Dynamic Radius Retrieval (DRR)?** Standard "Top-K" retrieval is inherently flawed for fact-checking because it forces the system to consider a fixed number of documents even if only the first one is truly relevant. This often introduces low-similarity noise that can dilute the final verdict. By implementing a dynamic radius of $0.05$, the system identifies the similarity score of the top-ranked document and discards any hits that fall below the threshold of $TopScore - 0.05$. This ensures that the evidence fed into the Cross-Encoder is of uniform semantic quality and prevents irrelevant documents from drowning the strongest signal.
+1. **Windowed Chunking:** Transformer cross-encoders (like PubMedBERT) suffer from "Attention Dilution" when fed massive blocks of text. By chunking abstracts into sliding 2-sentence windows, we force the model's self-attention heads to focus strictly on the direct relationship between the specific claim and the isolated fact.
+2. **Max Pooling at the Chunk Level:** Most sentences in a scientific abstract are background information such as methodologies and objectives and will return a `NEUTRAL` stance. If we averaged the chunk scores, the `NEUTRAL` noise would mathematically drown out the one sentence that actually proves or disproves the claim. Max Pooling ensures that a single, high-confidence signal dictates the document's stance.
+3. **Weighted Thresholded Sum Pooling for the Verdict:** Not all retrieved documents are equally relevant. By multiplying the NLI confidence score by the Qdrant semantic similarity score, we heavily weight evidence that perfectly matches the topic of the claim. The 65% hard threshold acts as a low-pass filter, dropping uncertain cross-encoder predictions before they can influence the final mathematical verdict.
+4. **Dynamic Radius Retrieval (DRR):** Standard "Top-K" retrieval is inherently flawed for fact-checking because it forces the system to consider a fixed number of documents even if only the first one is truly relevant. This often introduces low-similarity noise that can dilute the final verdict. By implementing a dynamic radius of $0.05$, the system identifies the similarity score of the top-ranked document and discards any hits that fall below the threshold of $TopScore - 0.05$. This ensures that the evidence fed into the Cross-Encoder is of uniform semantic quality and prevents irrelevant documents from drowning the strongest signal.
 
 -------
