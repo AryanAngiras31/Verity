@@ -195,62 +195,83 @@ async fn verify_claim(
             }
         }
 
-        for clean_chunk in chunks {
-            // Tokenize the chunk
-            let encoding = data.cross_encoder_tokenizer
-                .encode((clean_chunk.as_str(), claim), true)
-                .expect("Failed to tokenize chunk and claim");
+        let batch_size = chunks.len();
+        if batch_size == 0 {
+            continue;
+        }
 
-            let input_ids: Vec<i64> = encoding.get_ids().iter().map(|&x| x as i64).collect();
-            let attention_mask: Vec<i64> = encoding.get_attention_mask().iter().map(|&x| x as i64).collect();
-            let token_type_ids: Vec<i64> = encoding.get_type_ids().iter().map(|&x| x as i64).collect();
-
-            let shape = vec![1, input_ids.len() as i64];
-
-            // Offload the Cross-Encoder inference to a blocking thread
-            // We pass the model in and get it back out so we can reuse it in the next iteration
-            let (logits_result, returned_encoder) = web::block(move || {
-                let logits_res = {
-                    let result = cross_encoder.run(ort::inputs![
-                        "input_ids" => Tensor::from_array((shape.clone(), input_ids)).unwrap(),
-                        "attention_mask" => Tensor::from_array((shape.clone(), attention_mask)).unwrap(),
-                        "token_type_ids" => Tensor::from_array((shape.clone(), token_type_ids)).unwrap(),
-                    ]);
-                    
-                    match result {
-                        Ok(outputs) => {
-                            match outputs["logits"].try_extract_tensor::<f32>() {
-                               Ok((_shape, logits_data)) => Ok(logits_data[0..3].to_vec()),
-                               Err(e) => Err(ort::Error::from(e)),
-                            }
-                        },
-                        Err(e) => Err(e)
-                    }
-                };
-
-                // Return both the result and the model so we can use the model in the next iteration
-                (logits_res, cross_encoder)
-            })
-            .await
-            .expect("Cross-Encoder blocking task panicked");
+        // Preapre the inputs for the tokenizer. A list of tuples (Chunk, Claim)
+        let encoding_inputs: Vec<(String, String)> = chunks
+            .iter()
+            .map(|chunk| (chunk.clone(), claim.to_string()))
+            .collect();
         
-            // Update the cross_encoder for the next iteration
-            cross_encoder = returned_encoder;
+        // Encode the entire batch at once. The tokenizer will pad them automatically
+        let encodings = data.cross_encoder_tokenizer
+            .encode_batch(encoding_inputs, true)
+            .unwrap();
 
-            let logits = match logits_result {
-                Ok(l) => l, 
-                Err(e) => {
-                    println!("Warning: Skipping chunk. ONNX inference failed. Error: {:?}", e);
-                    continue;
+        // Since they are padded, we can get the sequence length from the first encoding
+        let seq_len = encodings[0].get_ids().len();
+
+        // Flatten the 2D batch into 1D vectors for ONNX
+        let mut input_ids: Vec<i64> = Vec::with_capacity(batch_size * seq_len);
+        let mut attention_mask: Vec<i64> = Vec::with_capacity(batch_size * seq_len);
+        let mut token_type_ids: Vec<i64> = Vec::with_capacity(batch_size * seq_len);
+
+        for encoding in encodings {
+            input_ids.extend(encoding.get_ids().iter().map(|&x| x as i64));
+            attention_mask.extend(encoding.get_attention_mask().iter().map(|&x| x as i64));
+            token_type_ids.extend(encoding.get_type_ids().iter().map(|&x| x as i64));
+        }
+
+        let shape = vec![batch_size as i64, seq_len as i64];
+
+        // Offload the batched inference to a blocking thread
+        let (logits_result, returned_cross_encoder) = web::block(move || {
+            let logits_res = {
+                let result = cross_encoder.run(ort::inputs![
+                    "input_ids" => Tensor::from_array((shape.clone(), input_ids)).unwrap(),
+                    "attention_mask" => Tensor::from_array((shape.clone(), attention_mask)).unwrap(),
+                    "token_type_ids" => Tensor::from_array((shape.clone(), token_type_ids)).unwrap(),
+                ]);
+                
+                match result {
+                    Ok(outputs) => {
+                        match outputs["logits"].try_extract_tensor::<f32>() {
+                            Ok((_shape, logits_data)) => Ok(logits_data.to_vec()),
+                            Err(e) => Err(ort::Error::from(e))
+                        }
+                    }
+                    Err(e) => Err(e)
                 }
             };
+            (logits_res, cross_encoder)
+        })
+        .await
+        .expect("Cross-Encoder blocking failed");
 
-            let max_logit: f32 = logits[0].max(logits[1].max(logits[2]));
-            let exp_logits: Vec<f32> = logits.iter().map(|&x| (x-max_logit).exp()).collect();
+        // Get cross-encoder back for next iteration
+        cross_encoder = returned_cross_encoder;
+
+        let flat_logits = match logits_result {
+            Ok(logits) => logits,
+            Err(e) => {
+                println!("Warning: Skipping document. ONNX batched inference failed. Error: {:?}", e);
+                continue;
+            }
+        };
+
+        // Process the flattened logits array. 
+        // Every 3 items in the array correspond to [Refute, Support, Neutral] for one chunk.\
+        for logits_chunk in flat_logits.chunks(3) {
+            // Convert logits to SoftMax probabilities 
+            let max_logit: f32 = logits_chunk[0].max(logits_chunk[1].max(logits_chunk[2]));
+            let exp_logits: Vec<f32> = logits_chunk.iter().map(|&x| (x - max_logit).exp()).collect();
             let sum_logits: f32 = exp_logits.iter().sum();
             let softmax_probs: Vec<f32> = exp_logits.iter().map(|&x| x / sum_logits).collect();
-
-            // We discard chunks with neutral probability for max pooling
+            
+            // Extract probabilities for each class
             let refute_prob = softmax_probs[0];
             let support_prob = softmax_probs[1];
 
@@ -386,13 +407,22 @@ async fn main() -> std::io::Result<()> {
         .build()
         .expect("Failed to create Cross-Encoder pool");
 
+    // Initialize Cross-Encoder Tokenizer with padding enabled
+    let mut cross_encoder_tokenizer = Tokenizer::from_file("models/pubmedbert/tokenizer.json").unwrap();
+
+    // Enable automatic padding to the longest sequence in the batch
+    cross_encoder_tokenizer.with_padding(Some(tokenizers::PaddingParams {
+        strategy: tokenizers::PaddingStrategy::BatchLongest,
+        ..Default::default()
+    }));
+
     // Create app state 
     let app_state = web::Data::new(AppState {
         qdrant_client: client,
         bi_encoder_pool,
         bi_encoder_tokenizer: Tokenizer::from_file("models/bge_small/tokenizer.json").unwrap(),
         cross_encoder_pool,
-        cross_encoder_tokenizer: Tokenizer::from_file("models/pubmedbert/tokenizer.json").unwrap(),
+        cross_encoder_tokenizer,    // Use configured tokenizer with padding enabled
     });
 
     println!("Started Verity Rust API on 0.0.0.0:8080...");
