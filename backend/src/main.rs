@@ -41,7 +41,7 @@ impl Manager for CrossEncoderManager {
 
     async fn create(&self) -> Result<Self::Type, Self::Error> {
         Session::builder()?
-            .commit_from_file("models/pubmedbert/model.onnx")
+            .commit_from_file("models/pubmedbert/model_quantized.onnx")
     }
 
     async fn recycle(&self, _obj: &mut Self::Type, _: &deadpool::managed::Metrics) -> RecycleResult<Self::Error> {

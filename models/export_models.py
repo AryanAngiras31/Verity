@@ -1,7 +1,7 @@
-import tempfile
+from optimum.onnxruntime import ORTQuantizer
+from optimum.onnxruntime.configuration import AutoQuantizationConfig
 from pathlib import Path
-
-from adapters import AutoAdapterModel
+import tempfile
 from optimum.onnxruntime import (
     ORTModelForFeatureExtraction,
     ORTModelForSequenceClassification,
@@ -28,27 +28,43 @@ def export_to_onnx():
         bge_tokenizer.save_pretrained(bge_dir)
         print(f"BGE-Small successfully saved to {bge_dir}\n")
 
-    print("\n--- 2. Exporting PubMedBERT (Cross-Encoder) ---")
-    # --- SWAPPED TO PUBMEDBERT HERE ---
+    print("\n--- 2. Exporting Quantized PubMedBERT (Cross-Encoder) ---")
     pubmed_id = "pritamdeka/PubMedBERT-MNLI-MedNLI"
     pubmed_dir = output_dir / "pubmedbert"
-    pubmed_path = pubmed_dir / "model.onnx"
+    pubmed_path = pubmed_dir / "model_quantized.onnx"
 
     if pubmed_path.exists():
         print(
-            f"PubMedBERT ONNX model already exists at {pubmed_path}. Skipping export."
+            f"Quantized PubMedBERT ONNX model already exists at {pubmed_path}. Skipping export."
         )
     else:
-        print(f"Downloading and converting {pubmed_id}...")
-        # ORTModelForSequenceClassification keeps the classification head
-        pubmed_model = ORTModelForSequenceClassification.from_pretrained(
-            pubmed_id, export=True
-        )
-        pubmed_tokenizer = AutoTokenizer.from_pretrained(pubmed_id)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
 
-        pubmed_model.save_pretrained(pubmed_dir)
-        pubmed_tokenizer.save_pretrained(pubmed_dir)
-        print(f"PubMedBERT successfully saved to {pubmed_dir}\n")
+            print(f"Downloading and exporting f32 model to temporary path...")
+            # Export the initial f32 model to the temp directory
+            pubmed_model = ORTModelForSequenceClassification.from_pretrained(
+                pubmed_id, export=True
+            )
+            pubmed_model.save_pretrained(temp_path)
+
+            print("Applying INT8 Dynamic Quantization...")
+            quantizer = ORTQuantizer.from_pretrained(temp_path)
+
+            # Create the quantization configuration optimized for CPUs
+            dqconfig = AutoQuantizationConfig.avx2(
+                is_static=False, 
+                per_channel=True
+            )
+    
+            quantizer.quantize(
+                save_dir=pubmed_dir, 
+                quantization_config=dqconfig
+            )
+    
+            pubmed_tokenizer = AutoTokenizer.from_pretrained(pubmed_id)
+            pubmed_tokenizer.save_pretrained(pubmed_dir)
+            print(f"Quantized PubMedBERT successfully saved to {pubmed_dir}\n")
 
 
 if __name__ == "__main__":
